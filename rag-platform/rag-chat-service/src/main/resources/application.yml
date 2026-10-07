@@ -63,9 +63,15 @@ feign:
         readTimeout: 500
 
 rag:
+  # ---------------------------------------------------------------------------
+  # 问答链路参数
+  # ---------------------------------------------------------------------------
   chat:
     model-refresh-ms: 300000
     guardrail-refresh-ms: 600000
+  # ---------------------------------------------------------------------------
+  # 服务端来源鉴权（两套鉴权唯一分流点是 X-Request-Source，仅网关注入）
+  # ---------------------------------------------------------------------------
   server:
     auth:
       enabled: true
@@ -73,6 +79,30 @@ rag:
         - 10.10.1.0/24
       gateway-signature-enabled: false
       gateway-sign-secret: ${RAG_GATEWAY_SIGN_SECRET:}
+  # ---------------------------------------------------------------------------
+  # 在线评估（t_llm_eval_score 的 ONLINE 来源）
+  # 只启用「无需裁判模型即可计算」的指标：CITATION_COVERAGE / CONTEXT_PRECISION。
+  # FAITHFULNESS、ANSWER_RELEVANCY、HALLUCINATION 需要 LLM-as-judge，
+  # 接入前刻意不计算 —— 用规则凑出来的假分数比没有分数更危险。
+  # ---------------------------------------------------------------------------
+  eval:
+    online-enabled: ${RAG_EVAL_ONLINE_ENABLED:true}
+    sample-rate: ${RAG_EVAL_SAMPLE_RATE:0.05}
+    max-concurrent: ${RAG_EVAL_MAX_CONCURRENT:2}
+    manual-metrics:
+      - CITATION_COVERAGE
+      - CONTEXT_PRECISION
+  # ---------------------------------------------------------------------------
+  # 回放（按 traceId 一键还原一次回答）
+  # 深链模板按环境填写；**未配置时回放视图返回 null，前端不展示入口** ——
+  # 不给一个点了必然 404 的链接，是运维工具的基本体面。
+  # 模板里严禁出现任何密钥：LangFuse 凭据只配在 OTel Collector，业务服务零持有。
+  # ---------------------------------------------------------------------------
+  replay:
+    enabled: ${RAG_REPLAY_ENABLED:true}
+    apm-url-template: ${RAG_REPLAY_APM_URL:}
+    langfuse-url-template: ${RAG_REPLAY_LANGFUSE_URL:}
+    retrieval-log-url-template: ${RAG_REPLAY_RETRIEVAL_URL:}
   # ---------------------------------------------------------------------------
   # 可观测（详见 docs/05-AI可观测与运维监控方案.md）
   # 生产把 content-level 保持 METRICS_ONLY：既不落问答原文，也不影响链路回放能力

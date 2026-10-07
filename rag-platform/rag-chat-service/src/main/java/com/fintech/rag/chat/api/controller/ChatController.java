@@ -23,6 +23,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -42,6 +44,10 @@ import java.util.concurrent.Executors;
  *       一个用户请求在 LangFuse 里变成两条互不相关的 Trace。</li>
  * </ol>
  * <p>因此这里在提交任务前捕获上下文快照与父 span，在任务线程内恢复。</p>
+ *
+ * <p><b>SSE done 事件携带 messageId 与 traceId</b>：流式场景下前端拿不到
+ * {@code R.traceId}（响应是事件流而非统一返回体），若不在 done 里回带，
+ * 用户点踩时就无法定位到具体那条回答 —— 回放链路会在最后一米断掉。</p>
  *
  * @author rag-platform
  */
@@ -88,7 +94,7 @@ public class ChatController {
      * <pre>
      *   event: delta      数据为增量文本片段
      *   event: citations  数据为引用列表 JSON
-     *   event: done       数据为完成标记
+     *   event: done       数据为 {messageId, conversationId, traceId}，前端凭 traceId 可回放本次回答
      *   event: error      数据为错误码与提示
      * </pre>
      */
@@ -120,9 +126,13 @@ public class ChatController {
                 chatAppService.stream(request, context.subjectType(), context.subjectId(),
                         context.roleCodes(), context.deptId(),
                         delta -> sendQuietly(emitter, "delta", delta),
-                        (answer, citations) -> {
-                            sendQuietly(emitter, "citations", citations);
-                            sendQuietly(emitter, "done", "ok");
+                        result -> {
+                            sendQuietly(emitter, "citations", result.citations());
+                            Map<String, Object> done = new LinkedHashMap<>();
+                            done.put("messageId", result.messageId() == null ? "" : result.messageId());
+                            done.put("conversationId", request.conversationId() == null ? "" : request.conversationId());
+                            done.put("traceId", result.traceId() == null ? "" : result.traceId());
+                            sendQuietly(emitter, "done", done);
                             emitter.complete();
                         },
                         error -> {

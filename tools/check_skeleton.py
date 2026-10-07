@@ -18,6 +18,15 @@ B. 可观测专项（把「落地时会静默失败」的坑固化成校验项�
   11) 指标标签纪律（禁止无界标签：traceId / userId / conversationId …）
   12) LangFuse 密钥是否泄漏到业务代码（只允许出现在 deploy/）
   13) 内容采集档位防呆（FULL_CONTENT 必须伴随 allow-plain-text-content=false）
+
+C. 落库与回放专项（把「表建了没人写」「审计字段取客户端值」固化成校验项）
+  14) 评估 / 回放 / 落库关键文件是否存在
+  15) 检索日志的 trace_id 是否取自服务端链路（不得取请求体里的客户端值）
+  16) 评估写入是否走了唯一入口（禁止各处直接 insert t_llm_eval_score）
+  17) 回放接口是否有准入校验与 traceId 格式校验
+  18) 实体字段与 docs/03 的 DDL 列是否一一对应（双向：缺字段 / 多字段都报）
+  19) 检索日志的出口覆盖（成功 / 空召回 / 无授权 / 异常四条路径都要落日志）
+  20) EvalMetric 是否覆盖 DDL 声明的全部指标码
 """
 import json
 import pathlib
@@ -27,6 +36,7 @@ import xml.etree.ElementTree as ET
 
 BASE = pathlib.Path(r"D:/AiWorkOut/java-ai/rag-platform")
 DEPLOY = pathlib.Path(r"D:/AiWorkOut/java-ai/deploy/observability")
+DOCS = pathlib.Path(r"D:/AiWorkOut/java-ai/docs")
 
 errors = []
 java_count = 0
@@ -319,12 +329,142 @@ if dash.is_file():
         errors.append(f"[Grafana 看板 JSON 非法] {ex}")
 
 
+# ================================================================ C. 落库与回放专项
+CHAT_JAVA = "rag-chat-service/src/main/java/com/fintech/rag/chat"
+RET_JAVA = "rag-retrieval-service/src/main/java/com/fintech/rag/retrieval"
+
+# ---- 14) 评估 / 回放 / 落库关键文件
+CHAIN_FILES_REQUIRED = [
+    "rag-api/src/main/java/com/fintech/rag/api/dto/common/EvalMetric.java",
+    "rag-api/src/main/java/com/fintech/rag/api/dto/common/EvalSource.java",
+    "rag-api/src/main/java/com/fintech/rag/api/dto/replay/ReplayView.java",
+    "rag-api/src/main/java/com/fintech/rag/api/dto/replay/RetrievalTraceView.java",
+    f"{CHAT_JAVA}/app/persist/ChatPersistenceService.java",
+    f"{CHAT_JAVA}/app/eval/LlmEvalScoreAppService.java",
+    f"{CHAT_JAVA}/app/eval/OnlineEvalSampler.java",
+    f"{CHAT_JAVA}/app/eval/ReplayAppService.java",
+    f"{CHAT_JAVA}/api/controller/ReplayController.java",
+    f"{CHAT_JAVA}/api/controller/FeedbackController.java",
+    f"{CHAT_JAVA}/api/controller/EvalController.java",
+    f"{CHAT_JAVA}/domain/model/MessageCitation.java",
+    f"{CHAT_JAVA}/domain/model/TokenUsageRecord.java",
+    f"{CHAT_JAVA}/domain/model/AnswerFeedback.java",
+    f"{CHAT_JAVA}/domain/model/LlmEvalScore.java",
+    f"{RET_JAVA}/app/service/RetrievalTraceQueryService.java",
+    f"{RET_JAVA}/api/controller/RetrievalTraceController.java",
+]
+for rel in CHAIN_FILES_REQUIRED:
+    if not (BASE / rel).is_file():
+        errors.append(f"[落库/回放链路缺文件] {rel}")
+
+# ---- 15) 检索日志的 trace_id 必须取自服务端链路
+retrieval_svc_path = BASE / f"{RET_JAVA}/app/service/RetrievalAppService.java"
+if retrieval_svc_path.is_file():
+    code = strip_comments(retrieval_svc_path.read_text(encoding="utf-8"))
+    if "entity.setTraceId(request.traceId())" in code:
+        errors.append("[审计字段取客户端值] RetrievalAppService 用 request.traceId() 写检索日志；"
+                      "trace_id 是审计字段，权威来源必须是服务端链路（RequestContext.currentTraceId()）")
+    if "RequestContext.currentTraceId()" not in code:
+        errors.append("[审计字段无服务端来源] RetrievalAppService 未见 RequestContext.currentTraceId()")
+
+# ---- 16) 评估写入唯一入口
+for path in JAVA_FILES:
+    rel = path.relative_to(BASE).as_posix()
+    if rel.endswith("LlmEvalScoreAppService.java"):
+        continue
+    code = strip_comments(path.read_text(encoding="utf-8"))
+    if re.search(r'evalScoreMapper\s*\.\s*insert', code):
+        errors.append(f"[评估写入越界] {rel} 直接 insert t_llm_eval_score；"
+                      f"必须经 LlmEvalScoreAppService（那里有指标白名单 / 量纲 / reason 三条纪律校验）")
+
+# ---- 17) 回放接口必须有准入与格式校验
+replay_svc_path = BASE / f"{CHAT_JAVA}/app/eval/ReplayAppService.java"
+if replay_svc_path.is_file():
+    code = strip_comments(replay_svc_path.read_text(encoding="utf-8"))
+    if "RequestSource.DMZ_WEB" not in code:
+        errors.append("[回放准入缺失] ReplayAppService 未按请求来源拦截；"
+                      "外网入口若能访问回放，等于向用户开放他人的问答记录")
+    if "isValidTraceId" not in code:
+        errors.append("[回放参数未校验] ReplayAppService 未校验 traceId 格式")
+
+# ---- 18) 实体字段与 docs/03 DDL 列一一对应
+def snake(name: str) -> str:
+    s = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', name)
+    s = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1_\2', s)
+    return s.lower()
+
+
+DDL_ENTITY_MAP = {
+    "t_message": f"{CHAT_JAVA}/domain/model/ChatMessage.java",
+    "t_message_citation": f"{CHAT_JAVA}/domain/model/MessageCitation.java",
+    "t_token_usage": f"{CHAT_JAVA}/domain/model/TokenUsageRecord.java",
+    "t_feedback": f"{CHAT_JAVA}/domain/model/AnswerFeedback.java",
+    "t_llm_eval_score": f"{CHAT_JAVA}/domain/model/LlmEvalScore.java",
+    "t_retrieval_log": f"{RET_JAVA}/domain/model/RetrievalLog.java",
+    "t_conversation": f"{CHAT_JAVA}/domain/model/Conversation.java",
+}
+doc03 = DOCS / "03-数据模型与接口契约.md"
+if not doc03.is_file():
+    errors.append("[契约文档缺失] docs/03-数据模型与接口契约.md 不存在，无法校验实体字段一致性")
+else:
+    ddl_text = doc03.read_text(encoding="utf-8")
+    ddl_checked = 0
+    for table, rel in DDL_ENTITY_MAP.items():
+        entity_path = BASE / rel
+        if not entity_path.is_file():
+            errors.append(f"[实体缺失] {table} 无对应实体 {rel}")
+            continue
+        m = re.search(r'CREATE TABLE %s \((.*?)\n\)\s*ENGINE' % re.escape(table), ddl_text, re.S)
+        if not m:
+            errors.append(f"[DDL 未找到] docs/03 中未找到 {table} 的建表语句")
+            continue
+        columns = set()
+        for line in m.group(1).splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith(
+                    ("PRIMARY", "KEY", "UNIQUE", "INDEX", "CONSTRAINT", ")")):
+                continue
+            columns.add(stripped.split()[0])
+        code = strip_comments(entity_path.read_text(encoding="utf-8"))
+        fields = {snake(f) for f in re.findall(
+            r'^\s*private\s+(?!static)[\w<>,\[\]\s]+?\s+(\w+)\s*;', code, re.M)}
+        missing = sorted(columns - fields)
+        extra = sorted(fields - columns)
+        if missing:
+            errors.append(f"[实体缺字段] {rel} 缺 {missing}（DDL 有、实体没有 → 该列永远写不进去）")
+        if extra:
+            errors.append(f"[实体多字段] {rel} 多 {extra}（实体有、DDL 没有 → insert 会报未知列）")
+        ddl_checked += 1
+    print(f"实体- DDL 字段对齐：核对 {ddl_checked} 张表")
+
+# ---- 19) 检索日志出口覆盖
+if retrieval_svc_path.is_file():
+    code = strip_comments(retrieval_svc_path.read_text(encoding="utf-8"))
+    # writeLog 的调用点（方法定义那一次不算）
+    calls = len(re.findall(r'\bwriteLog\(', code)) - 1
+    if calls < 3:
+        errors.append(f"[检索日志出口不全] RetrievalAppService 只有 {calls} 处 writeLog 调用"
+                      f"（应覆盖：成功/空召回、无授权阻断、异常）；"
+                      f"漏掉的出口会让「空召回率」等核心指标出现无从解释的缺口")
+
+# ---- 20) EvalMetric 必须覆盖 DDL 声明的全部指标码
+EVAL_METRIC_EXPECT = ["FAITHFULNESS", "ANSWER_RELEVANCY", "CONTEXT_PRECISION",
+                      "CONTEXT_RECALL", "HALLUCINATION", "CITATION_COVERAGE", "HELPFULNESS"]
+metric_path = BASE / "rag-api/src/main/java/com/fintech/rag/api/dto/common/EvalMetric.java"
+if metric_path.is_file():
+    code = strip_comments(metric_path.read_text(encoding="utf-8"))
+    for name in EVAL_METRIC_EXPECT:
+        if not re.search(r'^\s*%s\s*[,(]' % name, code, re.M):
+            errors.append(f"[指标码缺失] EvalMetric 缺少 {name}（docs/03 的 metric_code 注释已声明该指标）")
+
+
 # ================================================================ 输出
 print(f"Java 文件: {java_count}  POM: {pom_count}  application.yml: {yml_count}")
 print(f"可观测专项：必需源码 {len(OBS_FILES_REQUIRED)} 项 / 部署编排 {len(DEPLOY_FILES_REQUIRED)} 项")
+print(f"落库与回放专项：必需文件 {len(CHAIN_FILES_REQUIRED)} 项 / 实体-DDL 对齐 {len(DDL_ENTITY_MAP)} 张表")
 if errors:
     print("\n===== 发现问题 =====")
     for e in errors:
         print(" -", e)
     sys.exit(1)
-print("结构自检通过：package / 类型名 / 括号配平 / POM / YAML / 可观测埋点一致性 均无异常")
+print("结构自检通过：package / 类型名 / 括号配平 / POM / YAML / 可观测埋点 / 落库链路 / 实体-DDL 对齐 均无异常")

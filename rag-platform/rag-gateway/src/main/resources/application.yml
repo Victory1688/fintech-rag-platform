@@ -1,0 +1,136 @@
+server:
+  port: 8080
+  # 网关前置一般还有 Nginx，此处只监听内网；Nginx 需配置 proxy_buffering off 才能透传 SSE
+  shutdown: graceful
+
+spring:
+  application:
+    name: rag-gateway
+  profiles:
+    active: dev
+  config:
+    import:
+      - optional:nacos:rag-gateway.yaml
+      - optional:nacos:rag-common.yaml
+  cloud:
+    nacos:
+      server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
+      discovery:
+        namespace: ${NACOS_NAMESPACE:rag}
+        group: RAG_GROUP
+      config:
+        namespace: ${NACOS_NAMESPACE:rag}
+        group: RAG_GROUP
+        file-extension: yaml
+    # ---------------------------------------------------------------------
+    # 重要版本提示：Spring Cloud Gateway 4.2 起，配置前缀搬迁为
+    #   spring.cloud.gateway.server.webflux.*
+    # 本文件沿用兼容前缀 spring.cloud.gateway.*。
+    # 若你使用 Spring Cloud Gateway 5.x 出现「路由不生效」，请整体替换前缀。
+    # ---------------------------------------------------------------------
+    gateway:
+      discovery:
+        locator:
+          # 关闭自动路由：自动路由会把所有注册服务暴露出去，是常见的安全事故来源
+          enabled: false
+      httpclient:
+        connect-timeout: 3000
+        # SSE 必须调大，否则长回答会在中途被网关掐断
+        response-timeout: 300s
+      routes:
+        # 说明：路由不做重写，各服务自身的 Controller 就挂在 /api/** 下。
+        # 好处是「内网直连」与「网关转发」走同一套路径契约，排障时不会混淆。
+        - id: rag-chat-service
+          uri: lb://rag-chat-service
+          predicates:
+            - Path=/api/ai/**
+          filters:
+            # 生成链路成本高，限流必须做在网关；桶按「用户」维度，避免单用户打爆模型
+            - name: RequestRateLimiter
+              args:
+                key-resolver: "#{@userKeyResolver}"
+                redis-rate-limiter.replenishRate: 2
+                redis-rate-limiter.burstCapacity: 5
+        - id: rag-knowledge-service
+          uri: lb://rag-knowledge-service
+          predicates:
+            - Path=/api/kb/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                key-resolver: "#{@userKeyResolver}"
+                redis-rate-limiter.replenishRate: 20
+                redis-rate-limiter.burstCapacity: 40
+        - id: rag-ingest-service
+          uri: lb://rag-ingest-service
+          predicates:
+            - Path=/api/ingest/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                key-resolver: "#{@userKeyResolver}"
+                redis-rate-limiter.replenishRate: 10
+                redis-rate-limiter.burstCapacity: 20
+        - id: rag-platform-service
+          uri: lb://rag-platform-service
+          predicates:
+            - Path=/api/platform/**
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 3
+      timeout: 2s
+
+rag:
+  gateway:
+    fail-close: true
+    auth-timeout-ms: 500
+    # 可选：配置后额外注入 X-Gateway-Signature，内网服务可做不依赖 IP 的强校验
+    sign-secret: ${RAG_GATEWAY_SIGN_SECRET:}
+    # 是否接受客户端传入的 traceparent。默认 false：网关是链路的唯一根（详见 docs/05 §1.2）
+    accept-client-traceparent: false
+    public-paths:
+      - /api/platform/auth/login
+      - /api/platform/auth/refresh
+      - /api/ai/health
+      - /actuator/health
+      - /doc.html
+      - /v3/api-docs/**
+    # 说明：原先把 /actuator/** 整体放入 public-paths 是危险配置 ——
+    # actuator 暴露 prometheus/metrics/env/heapdump 等敏感端点，
+    # 生产必须由「内网采集器直连端口」而不是「经网关对外暴露」。
+    # 故此处只放行健康检查，其余 actuator 端点一律走内网。
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # 生产环境请把 include 收敛到健康与指标；env/heapdump/loggers 等严禁暴露
+        include: health,info,prometheus,metrics,gateway
+  endpoint:
+    health:
+      show-details: never
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    propagation:
+      # 显式锁定 W3C（traceparent + tracestate），禁止退回 b3 / 自定义头
+      type: w3c
+    sampling:
+      # 见 docs/05 §7.2：指标不受采样影响，trace 采样可显著降低存储与网络成本
+      probability: ${RAG_OBS_SAMPLING:0.1}
+  otlp:
+    tracing:
+      # 应用只认 OTel Collector，不认 LangFuse（LangFuse 密钥只配在 Collector）
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://127.0.0.1:4318/v1/traces}
+      timeout: 3s
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+    com.fintech.rag: INFO

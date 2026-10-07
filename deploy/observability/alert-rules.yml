@@ -1,0 +1,141 @@
+# =============================================================================
+# 告警规则（对应 docs/05 §9.1 的分级）
+#
+# 纪律一：告警文本不含业务内容（只含指标、阈值、服务名、traceId）
+# 纪律二：质量类告警需要基线 —— 上线前 2 周只观测不告警，第 3 周起按实测值设阈值
+# =============================================================================
+groups:
+  # ------------------------------------------------------------- P0 服务不可用
+  - name: rag-p0-availability
+    rules:
+      - alert: RagServiceDown
+        expr: up{job=~"rag-.*"} == 0
+        for: 1m
+        labels:
+          severity: P0
+        annotations:
+          summary: "服务不可用：{{ $labels.job }}"
+          description: "Prometheus 已连续 1 分钟抓不到 {{ $labels.job }} 的指标端点。"
+
+      - alert: RagModelCallFailureCritical
+        expr: |
+          sum(rate(gen_ai_client_operation_duration_seconds_count{error_type!=""}[5m]))
+          / clamp_min(sum(rate(gen_ai_client_operation_duration_seconds_count[5m])), 1) > 0.2
+        for: 5m
+        labels:
+          severity: P0
+        annotations:
+          summary: "模型调用失败率超过 20%"
+          description: "模型侧可能整体不可用，请检查上游供应商与网络链路。"
+
+  # ---------------------------------------------------------- P1 质量与成本
+  - name: rag-p1-quality-cost
+    rules:
+      - alert: RagModelCallFailureHigh
+        expr: |
+          sum(rate(gen_ai_client_operation_duration_seconds_count{error_type!=""}[5m]))
+          / clamp_min(sum(rate(gen_ai_client_operation_duration_seconds_count[5m])), 1) > 0.05
+        for: 5m
+        labels:
+          severity: P1
+        annotations:
+          summary: "模型调用失败率超过 5%"
+
+      - alert: RagEmptyRetrievalSpike
+        expr: |
+          sum(rate(rag_retrieval_empty_total[15m]))
+          / clamp_min(sum(rate(rag_retrieval_total[15m])), 1) > 0.3
+        for: 15m
+        labels:
+          severity: P1
+        annotations:
+          summary: "空召回率超过 30%（15 分钟窗口）"
+          description: "知识库可能出现缺口，或检索参数劣化。请核对最近的知识库变更与解析失败堆积。"
+
+      - alert: RagTokenCostSurge
+        expr: |
+          sum(rate(gen_ai_client_token_usage_sum[1h]))
+          > 3 * sum(rate(gen_ai_client_token_usage_sum[1h] offset 1d))
+        for: 15m
+        labels:
+          severity: P1
+        annotations:
+          summary: "Token 消耗超过昨日同期 3 倍"
+          description: "可能是刷量、Prompt 膨胀或上下文裁剪失效。"
+
+      - alert: RagGuardrailBlockedRising
+        expr: sum(rate(rag_guardrail_hit_total[30m])) > 1
+        for: 30m
+        labels:
+          severity: P1
+        annotations:
+          summary: "护栏拦截持续发生"
+          description: "可能是提示词注入攻击，或知识库出现了应被过滤的内容。"
+
+  # -------------------------------------------------------- P2 性能与体验
+  - name: rag-p2-performance
+    rules:
+      - alert: RagRetrievalSlow
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_server_requests_seconds_bucket{job="rag-retrieval-service"}[5m])) by (le)
+          ) > 1
+        for: 5m
+        labels:
+          severity: P2
+        annotations:
+          summary: "检索 P95 超过 1s"
+
+      - alert: RagTimeToFirstChunkSlow
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(gen_ai_client_operation_time_to_first_chunk_seconds_bucket[5m])) by (le)
+          ) > 1.5
+        for: 5m
+        labels:
+          severity: P2
+        annotations:
+          summary: "流式首字延迟 P95 超过 1.5s"
+          description: "注意：本指标包含检索耗时，是用户真实感知的延迟。"
+
+      - alert: RagGatewayRateLimitHigh
+        expr: |
+          sum(rate(spring_cloud_gateway_requests_seconds_count{status="429"}[5m]))
+          / clamp_min(sum(rate(spring_cloud_gateway_requests_seconds_count[5m])), 1) > 0.1
+        for: 10m
+        labels:
+          severity: P2
+        annotations:
+          summary: "网关限流拒绝率超过 10%"
+          description: "可能是正常业务增长，也可能是被刷。"
+
+  # ---------------------------------------------------------------- P3 运维
+  - name: rag-p3-ops
+    rules:
+      - alert: RagIngestParseFailurePileUp
+        expr: sum(increase(rag_ingest_task_failed_total[1h])) > 20
+        for: 10m
+        labels:
+          severity: P3
+        annotations:
+          summary: "文档解析失败堆积超过 20 个/小时"
+
+      - alert: RagCollectorQueueSaturated
+        expr: |
+          otelcol_exporter_queue_size / clamp_min(otelcol_exporter_queue_capacity, 1) > 0.8
+        for: 10m
+        labels:
+          severity: P3
+        annotations:
+          summary: "Collector 上报队列占用超过 80%"
+          description: "LangFuse 侧可能写入受阻。超限会丢弃 trace，业务不受影响。"
+
+      - alert: RagClickHouseDiskHigh
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/var/lib/clickhouse"}
+           / node_filesystem_size_bytes{mountpoint="/var/lib/clickhouse"}) < 0.2
+        for: 15m
+        labels:
+          severity: P3
+        annotations:
+          summary: "ClickHouse 磁盘剩余不足 20%"

@@ -1,0 +1,89 @@
+server:
+  port: 8082
+  shutdown: graceful
+
+spring:
+  application:
+    name: rag-knowledge-service
+  profiles:
+    active: dev
+  config:
+    import:
+      - optional:nacos:rag-knowledge-service.yaml
+      - optional:nacos:rag-common.yaml
+  cloud:
+    nacos:
+      server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
+      discovery:
+        namespace: ${NACOS_NAMESPACE:rag}
+        group: RAG_GROUP
+      config:
+        namespace: ${NACOS_NAMESPACE:rag}
+        group: RAG_GROUP
+        file-extension: yaml
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/rag_knowledge?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: ${MYSQL_USERNAME:rag}
+    password: ${MYSQL_PASSWORD:rag123456}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+feign:
+  okhttp:
+    enabled: true
+  client:
+    config:
+      default:
+        connectTimeout: 1000
+        readTimeout: 3000
+      # 验签是高频短调用，超时必须更严
+      rag-platform-service:
+        connectTimeout: 300
+        readTimeout: 500
+
+rag:
+  ragflow:
+    base-url: http://${RAGFLOW_HOST:127.0.0.1}:${RAGFLOW_PORT:9380}
+    api-key: ${RAGFLOW_API_KEY:}
+    default-embedding-model: BAAI/bge-large-zh-v1.5
+    default-rerank-model: BAAI/bge-reranker-v2-m3
+  server:
+    auth:
+      enabled: true
+      trusted-gateway-cidrs:
+        - 10.10.1.0/24
+      gateway-signature-enabled: false
+      gateway-sign-secret: ${RAG_GATEWAY_SIGN_SECRET:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+
+  tracing:
+    propagation:
+      # 显式锁定 W3C（traceparent + tracestate）。
+      # 一旦被改成 b3，OTel Collector 与 LangFuse 都无法解析 traceparent，
+      # 「APM 链路」与「AI 观测」的 traceId 会整条对不上（详见 docs/05 §1.2 第 1 条）。
+      type: w3c
+    sampling:
+      probability: ${RAG_OBS_SAMPLING:0.1}
+  otlp:
+    tracing:
+      # 应用只认 OTel Collector，不认 LangFuse（LangFuse 密钥只配在 Collector）
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://127.0.0.1:4318/v1/traces}
+      timeout: 3s
+logging:
+  level:
+    com.fintech.rag: INFO

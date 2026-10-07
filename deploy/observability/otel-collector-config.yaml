@@ -1,0 +1,145 @@
+# =============================================================================
+# OTel Collector —— 应用与可观测后端之间的唯一中介
+#
+# 设计要点（对应 docs/05 §1.2 第 4 条、§6、§7）：
+#   1. 应用只认本 Collector，不认 LangFuse：换后端/改采样/改脱敏都不用重新发版。
+#   2. LangFuse 的 OTLP 端点需要 Basic Auth 与自定义版本头，故用 otlphttp 而非 otlp。
+#   3. 指标【不】走 Collector —— Prometheus 直接拉各服务的 /actuator/prometheus。
+#      原因：Prometheus 是 pull 模型，不存在「Collector push 给 Prometheus」的标准数据流。
+#   4. 尾部采样保证「坏样本一条不丢」：错误 / 无据不答 / 护栏命中 / 慢请求 100% 保留。
+#   5. 兜底脱敏：真正的脱敏在应用侧完成，这里是安全网而非控制手段。
+# =============================================================================
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # 必须放第一位：OOM 是 Collector 最常见的自杀原因
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 75
+    spike_limit_percentage: 20
+
+  # 统一资源属性，便于按环境/命名空间过滤
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: ${env:DEPLOY_ENV}
+        action: upsert
+      - key: service.namespace
+        value: rag
+        action: upsert
+
+  # 兜底脱敏：删除不应上报的属性、对内容属性做掩码
+  # 注意：这是安全网。真正的脱敏在应用侧 ContentSanitizer 完成（docs/05 §1.2 第 11 条）
+  transform/redact:
+    error_mode: ignore
+    trace_statements:
+      - context: span
+        statements:
+          # 移除任何可能被误采集的身份/凭据字段
+          - delete_key(attributes, "rag.user.id")
+          - delete_key(attributes, "rag.user.name")
+          - delete_key(attributes, "rag.app.secret")
+          - delete_key(attributes, "http.request.header.authorization")
+          - delete_key(attributes, "http.request.header.x-app-signature")
+          - delete_key(attributes, "http.request.header.x-user-token")
+          - delete_key(attributes, "http.request.header.cookie")
+          # 内容属性兜底掩码：即便应用侧误采集，也不让证件号/手机号原样出内网
+          - replace_pattern(attributes["gen_ai.input.messages"], "1[3-9][0-9]{9}", "1**********")
+          - replace_pattern(attributes["gen_ai.output.messages"], "1[3-9][0-9]{9}", "1**********")
+          - replace_pattern(attributes["gen_ai.input.messages"], "[0-9]{17}[0-9Xx]", "******************")
+          - replace_pattern(attributes["gen_ai.output.messages"], "[0-9]{17}[0-9Xx]", "******************")
+
+  # 尾部采样：先缓冲整条 trace 再决策，因此可以按「结果好坏」而非只按比例采样
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 50000
+    expected_new_traces_per_sec: 200
+    policies:
+      # 1) 错误链路 100% 保留
+      - name: errors-always
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      # 2) 业务异常结果 100% 保留（最有价值的质量样本）
+      - name: abstained-always
+        type: string_attribute
+        string_attribute:
+          key: rag.outcome
+          values: [ABSTAINED, ERROR, GUARDRAIL_BLOCKED]
+      # 3) 护栏命中 100% 保留
+      - name: guardrail-always
+        type: string_attribute
+        string_attribute:
+          key: rag.guardrail.hit
+          values: ["true"]
+      # 4) 慢请求 100% 保留（阈值对齐 SLO：生成链路 P95 ≤ 8s）
+      - name: slow-requests
+        type: latency
+        latency:
+          threshold_ms: 8000
+      # 5) 其余兜底放行：真正的降采样交给应用侧 head sampling（两者是乘积关系）
+      - name: baseline
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 100
+
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+    send_batch_max_size: 1024
+
+exporters:
+  # LangFuse：OTLP over HTTP + Basic Auth + ingestion 版本头
+  otlphttp/langfuse:
+    endpoint: ${env:LANGFUSE_OTLP_ENDPOINT}
+    headers:
+      Authorization: "Basic ${env:LANGFUSE_AUTH_HEADER}"
+      # LangFuse 要求显式声明 ingestion 版本，缺失会静默丢数据
+      x-langfuse-ingestion-version: "4"
+    compression: gzip
+    timeout: 10s
+    retry_on_failure:
+      enabled: true
+      initial_interval: 2s
+      max_interval: 30s
+      max_elapsed_time: 120s
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      queue_size: 5000
+
+  # 全量 trace 的第二个出口（二期启用，见 docs/05 §3.1）
+  # otlphttp/tempo:
+  #   endpoint: http://tempo:4318
+  #   tls:
+  #     insecure: true
+
+  # 本地排查用：只打印摘要，不打印内容
+  debug:
+    verbosity: basic
+    sampling_initial: 5
+    sampling_thereafter: 200
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      level: basic
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, transform/redact, tail_sampling, batch]
+      # 二期需要「全量 trace 检索」时，把 otlphttp/tempo 解注释并加到这里
+      exporters: [otlphttp/langfuse, debug]

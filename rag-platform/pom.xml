@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.fintech.rag</groupId>
+    <artifactId>rag-platform</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>rag-platform</name>
+    <description>金融信贷 RAG 知识库平台 - 微服务聚合工程</description>
+
+    <!--
+      ============================================================================
+      版本基线说明（务必先读）
+      1. 下列版本按 2026-09 主流稳定组合给出；落地时请以 start.spring.io 与
+         mvnrepository.com 的实时可用版本为准。
+      2. Spring Boot / Spring Cloud / Spring Cloud Alibaba 三者必须按官方对照表
+         【成套升级】，禁止只升其中一个，否则 Nacos 装配会失败。
+      3. 所有三方版本统一在此锁定，子模块禁止自行指定 version。
+      ============================================================================
+    -->
+    <properties>
+        <java.version>17</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <spring-boot.version>3.5.6</spring-boot.version>
+        <spring-cloud.version>2025.0.0</spring-cloud.version>
+        <spring-cloud-alibaba.version>2025.0.0.0</spring-cloud-alibaba.version>
+
+        <!-- LangChain4j：只用 core + open-ai 两个基础包，刻意不引 spring-boot-starter，
+             因为模型需要从配置中心动态路由（多模型/敏感度分流），starter 的静态装配不适用 -->
+        <langchain4j.version>1.20.0</langchain4j.version>
+
+        <mybatis-plus.version>3.5.9</mybatis-plus.version>
+        <jjwt.version>0.12.6</jjwt.version>
+        <mapstruct.version>1.6.3</mapstruct.version>
+        <knife4j.version>4.5.0</knife4j.version>
+        <lombok.version>1.18.36</lombok.version>
+        <minio.version>8.5.17</minio.version>
+    </properties>
+
+    <modules>
+        <!-- 库模块（不可独立部署） -->
+        <module>rag-common</module>
+        <module>rag-api</module>
+        <!-- 可独立部署服务 -->
+        <module>rag-gateway</module>
+        <module>rag-platform-service</module>
+        <module>rag-knowledge-service</module>
+        <module>rag-ingest-service</module>
+        <module>rag-retrieval-service</module>
+        <module>rag-chat-service</module>
+    </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- ===== Spring 官方 BOM ===== -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.cloud</groupId>
+                <artifactId>spring-cloud-alibaba-dependencies</artifactId>
+                <version>${spring-cloud-alibaba.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- ===== LangChain4j BOM ===== -->
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-bom</artifactId>
+                <version>${langchain4j.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- ===== 本工程模块 ===== -->
+            <dependency>
+                <groupId>com.fintech.rag</groupId>
+                <artifactId>rag-common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fintech.rag</groupId>
+                <artifactId>rag-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- ===== 持久层 =====
+                 注意：Boot 3 必须用 mybatis-plus-spring-boot3-starter。
+                 若引入 mybatis-plus-extension 时出现包结构兼容报错，回退到 3.5.5。 -->
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+
+            <!-- ===== 安全：JWT =====
+                 0.12.x 与 0.11.x API 不兼容，ParserBuilder 已废弃，请用 Jwts.parser() -->
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-api</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-impl</artifactId>
+                <version>${jjwt.version}</version>
+                <scope>runtime</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-jackson</artifactId>
+                <version>${jjwt.version}</version>
+                <scope>runtime</scope>
+            </dependency>
+
+            <!-- ===== 对象存储 ===== -->
+            <dependency>
+                <groupId>io.minio</groupId>
+                <artifactId>minio</artifactId>
+                <version>${minio.version}</version>
+            </dependency>
+
+            <!-- ===== 文档与工具 ===== -->
+            <dependency>
+                <groupId>com.github.xiaoymin</groupId>
+                <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
+                <version>${knife4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct</artifactId>
+                <version>${mapstruct.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct-processor</artifactId>
+                <version>${mapstruct.version}</version>
+                <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+                <version>${lombok.version}</version>
+                <scope>provided</scope>
+            </dependency>
+
+            <!-- ===== 可观测：链路追踪（OTel Bridge）=====
+                 两者均由 spring-boot-dependencies 统一管理版本，故此处不写 version。
+                 若某次构建报「缺少 version」，说明当前 Boot BOM 未纳管该坐标，
+                 请在 properties 中补 <opentelemetry.version>x.y.z</opentelemetry.version>
+                 并在此显式声明（详见 docs/04 §4 的 V9）。
+                 为什么不用 OpenTelemetry Java Agent：见 docs/05 §1.2 第 8 条。 -->
+            <dependency>
+                <groupId>io.micrometer</groupId>
+                <artifactId>micrometer-tracing-bridge-otel</artifactId>
+            </dependency>
+            <dependency>
+                <groupId>io.opentelemetry</groupId>
+                <artifactId>opentelemetry-exporter-otlp</artifactId>
+            </dependency>
+            <dependency>
+                <groupId>io.micrometer</groupId>
+                <artifactId>micrometer-registry-prometheus</artifactId>
+            </dependency>
+            <!--
+              Feign 观测能力（跨服务 traceparent 透传的关键依赖）。
+
+              为什么必须显式声明：Spring Cloud OpenFeign 只有在 classpath 上存在
+              io.github.openfeign:feign-micrometer 时，才会装配
+              MicrometerObservationCapability 与 PropagatingSenderTracingObservationHandler；
+              缺失时 Feign 调用**不带 traceparent**，下游会另起一条新链路
+              （详见 docs/05 §1.2 第 10 条 / §5.4）。
+
+              版本由 spring-cloud-dependencies 引入的 feign-bom 统一纳管，故此处不写 version。
+              若构建报「缺少 version」，请在 properties 中补
+              <feign.version>x.y.z</feign.version> 并在此显式声明。
+            -->
+            <dependency>
+                <groupId>io.github.openfeign</groupId>
+                <artifactId>feign-micrometer</artifactId>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- 所有模块共用 -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!--
+          可观测依赖统一在此声明（optional=true），原因：
+          1) 6 个服务都需要，写在根 POM 避免 6 份重复；
+          2) 必须 optional —— rag-api 是对外 SDK，业务方引它时不应被动引入 OTel 导出器与
+             JVM 采集开销（optional 依赖不参与传递，但本工程内部子模块仍可编译使用）。
+          只在根 POM 加一次，子模块无需重复声明。
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-otel</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-otlp</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <version>${spring-boot.version}</version>
+                    <configuration>
+                        <excludes>
+                            <exclude>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                            </exclude>
+                        </excludes>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <release>${java.version}</release>
+                    <parameters>true</parameters>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                        <path>
+                            <groupId>org.mapstruct</groupId>
+                            <artifactId>mapstruct-processor</artifactId>
+                            <version>${mapstruct.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

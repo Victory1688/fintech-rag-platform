@@ -1,0 +1,100 @@
+server:
+  port: 8084
+  shutdown: graceful
+
+spring:
+  application:
+    name: rag-retrieval-service
+  profiles:
+    active: dev
+  config:
+    import:
+      - optional:nacos:rag-retrieval-service.yaml
+      - optional:nacos:rag-common.yaml
+  cloud:
+    nacos:
+      server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
+      discovery:
+        namespace: ${NACOS_NAMESPACE:rag}
+        group: RAG_GROUP
+      config:
+        namespace: ${NACOS_NAMESPACE:rag}
+        group: RAG_GROUP
+        file-extension: yaml
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/rag_retrieval?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: ${MYSQL_USERNAME:rag}
+    password: ${MYSQL_PASSWORD:rag123456}
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 1
+      timeout: 500ms
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+feign:
+  client:
+    config:
+      default:
+        connectTimeout: 500
+        readTimeout: 3000
+
+rag:
+  ragflow:
+    base-url: http://${RAGFLOW_HOST:127.0.0.1}:${RAGFLOW_PORT:9380}
+    api-key: ${RAGFLOW_API_KEY:}
+    read-timeout-ms: 5000
+    default-rerank-model: BAAI/bge-reranker-v2-m3
+  server:
+    auth:
+      enabled: true
+      trusted-gateway-cidrs:
+        - 10.10.1.0/24
+      gateway-signature-enabled: false
+      gateway-sign-secret: ${RAG_GATEWAY_SIGN_SECRET:}
+  # 检索侧仅上报指标，绝不回传召回片段原文（片段=知识库正文，最敏感）
+  observability:
+    enabled: true
+    content-level: METRICS_ONLY
+    allow-plain-text-content: false
+    subject-hash-salt: ${RAG_SUBJECT_HASH_SALT:}
+  retrieval:
+    # 检索默认参数走 Nacos 动态下发，便于灰度调参（见 docs/01 §10 R7）
+    top-n: 8
+    similarity-threshold: 0.20
+    vector-similarity-weight: 0.30
+    use-rerank: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: never
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    propagation:
+      # 显式锁定 W3C（traceparent + tracestate），禁止退回 b3 / 自定义头
+      type: w3c
+    sampling:
+      probability: ${RAG_OBS_SAMPLING:0.1}
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://127.0.0.1:4318/v1/traces}
+      timeout: 3s
+
+logging:
+  level:
+    com.fintech.rag: INFO

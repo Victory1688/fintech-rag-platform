@@ -1,0 +1,2 @@
+com.fintech.rag.api.config.RagApiAutoConfiguration
+com.fintech.rag.api.server.config.RagServerAuthAutoConfiguration

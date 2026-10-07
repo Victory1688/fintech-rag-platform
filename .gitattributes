@@ -1,0 +1,47 @@
+# ============================================================================
+# 行尾与二进制文件规范
+# 本机 core.autocrlf=true，若不统一规范，Windows 提交的 CRLF 会让 Linux 构建机
+# 与 Docker 构建产生「整文件 diff」，代码评审基本不可读。
+# ============================================================================
+
+# 默认：仓库内统一存 LF，工作区也保持 LF
+* text=auto eol=lf
+
+# 明确按文本处理的源码与配置
+*.java   text eol=lf
+*.xml    text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.properties text eol=lf
+*.sql    text eol=lf
+*.md     text eol=lf
+*.json   text eol=lf
+*.py     text eol=lf
+*.txt    text eol=lf
+*.tpl    text eol=lf
+Dockerfile text eol=lf
+
+# Windows 脚本必须保留 CRLF
+*.bat    text eol=crlf
+*.cmd    text eol=crlf
+
+# 二进制：禁止任何行尾转换
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.pdf    binary
+*.zip    binary
+*.gz     binary
+*.jar    binary
+*.war    binary
+*.class  binary
+*.keystore binary
+*.jks    binary
+
+# 语言统计：把这些标记为「非代码」，避免污染仓库语言占比
+docs/**  linguist-documentation
+*.md     linguist-documentation
+deploy/** linguist-documentation
+tools/** linguist-vendored=false

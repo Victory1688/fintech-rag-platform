@@ -1,0 +1,65 @@
+# =============================================================================
+# Prometheus 抓取配置
+#
+# 关键点：Prometheus 是【pull】模型 —— 各服务暴露 /actuator/prometheus，
+# Prometheus 定时来抓。不存在「OTel Collector 把指标推给 Prometheus」这种标准数据流；
+# 若确需 push，应使用 prometheusremotewrite exporter 推到 remote-write 端点。
+# =============================================================================
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: rag
+    env: ${DEPLOY_ENV}
+
+rule_files:
+  - /etc/prometheus/alert-rules.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  # ---------------------------------------------------------------- 业务服务
+  # 说明：/actuator/prometheus 只应经内网直连，禁止通过 DMZ 网关对外暴露
+  - job_name: rag-gateway
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["rag-gateway:8080"]
+  - job_name: rag-platform-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["rag-platform-service:8081"]
+  - job_name: rag-knowledge-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["rag-knowledge-service:8082"]
+  - job_name: rag-ingest-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["rag-ingest-service:8083"]
+  - job_name: rag-retrieval-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["rag-retrieval-service:8084"]
+  - job_name: rag-chat-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["rag-chat-service:8085"]
+
+  # 生产建议改为基于 Nacos 服务发现的动态抓取，避免服务扩缩容后漏抓：
+  # - job_name: rag-services
+  #   metrics_path: /actuator/prometheus
+  #   nacos_sd_configs:
+  #     - server: nacos:8848
+  #       namespace: rag
+  #       group: RAG_GROUP
+
+  # ------------------------------------------------------------ 可观测自身
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["otel-collector:8888"]
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

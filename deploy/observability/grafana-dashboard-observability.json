@@ -1,0 +1,158 @@
+{
+  "title": "RAG 知识库 · AI 可观测总览",
+  "uid": "rag-observability-overview",
+  "tags": ["rag", "llm", "observability"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "app_source",
+        "label": "流量来源",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "rag-prometheus" },
+        "query": "label_values(rag_chat_answer_total, app_source)",
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "model_code",
+        "label": "模型配置",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "rag-prometheus" },
+        "query": "label_values(rag_chat_answer_total, model_code)",
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "回答总数（近 1 小时）",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "rag-prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(rag_chat_answer_total{app_source=~\"$app_source\"}[1h]))"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "空召回率（无据不答）",
+      "description": "知识库覆盖度核心指标。上升说明知识库存在缺口或检索劣化。",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "rag-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.2 },
+              { "color": "red", "value": 0.3 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(rag_chat_answer_total{outcome=\"ABSTAINED\"}[15m])) / clamp_min(sum(rate(rag_chat_answer_total[15m])), 1)"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "首字延迟 P95（秒）",
+      "description": "含检索耗时，是用户真实感知的延迟；与模型 span duration 不是同一口径。",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "rag-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1.0 },
+              { "color": "red", "value": 1.5 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum(rate(gen_ai_client_operation_time_to_first_chunk_seconds_bucket[5m])) by (le))"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "模型调用失败率",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "rag-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.05 },
+              { "color": "red", "value": 0.2 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(gen_ai_client_operation_duration_seconds_count{error_type!=\"\"}[5m])) / clamp_min(sum(rate(gen_ai_client_operation_duration_seconds_count[5m])), 1)"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "回答结果分布（按来源拆分）",
+      "description": "ANSWERED / ABSTAINED / GUARDRAIL_BLOCKED / ERROR 趋势对比；来源即 DMZ_WEB 与 SF_INNER_APP。",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "rag-prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome, app_source) (rate(rag_chat_answer_total{app_source=~\"$app_source\"}[5m]))",
+          "legendFormat": "{{app_source}} · {{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Token 消耗（输入 / 输出）",
+      "description": "成本监控。异常突增对应 P1 告警 RagTokenCostSurge。",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "rag-prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (gen_ai_token_type) (rate(gen_ai_client_token_usage_sum[5m]))",
+          "legendFormat": "{{gen_ai_token_type}}"
+        }
+      ]
+    }
+  ]
+}

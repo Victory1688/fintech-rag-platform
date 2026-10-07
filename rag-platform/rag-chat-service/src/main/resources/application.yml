@@ -1,0 +1,116 @@
+server:
+  port: 8085
+  shutdown: graceful
+  tomcat:
+    threads:
+      # 生成链路是长耗时调用，线程数不能按常规设太小，但也不能无脑放大
+      max: 200
+
+spring:
+  application:
+    name: rag-chat-service
+  profiles:
+    active: dev
+  config:
+    import:
+      - optional:nacos:rag-chat-service.yaml
+      - optional:nacos:rag-common.yaml
+  cloud:
+    nacos:
+      server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
+      discovery:
+        namespace: ${NACOS_NAMESPACE:rag}
+        group: RAG_GROUP
+      config:
+        namespace: ${NACOS_NAMESPACE:rag}
+        group: RAG_GROUP
+        file-extension: yaml
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/rag_chat?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: ${MYSQL_USERNAME:rag}
+    password: ${MYSQL_PASSWORD:rag123456}
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 2
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+feign:
+  client:
+    config:
+      default:
+        connectTimeout: 500
+        readTimeout: 10000
+      # 检索超时必须严于生成，检索慢就直接降级，不要让用户干等
+      rag-retrieval-service:
+        connectTimeout: 500
+        readTimeout: 3000
+      rag-platform-service:
+        connectTimeout: 300
+        readTimeout: 500
+
+rag:
+  chat:
+    model-refresh-ms: 300000
+    guardrail-refresh-ms: 600000
+  server:
+    auth:
+      enabled: true
+      trusted-gateway-cidrs:
+        - 10.10.1.0/24
+      gateway-signature-enabled: false
+      gateway-sign-secret: ${RAG_GATEWAY_SIGN_SECRET:}
+  # ---------------------------------------------------------------------------
+  # 可观测（详见 docs/05-AI可观测与运维监控方案.md）
+  # 生产把 content-level 保持 METRICS_ONLY：既不落问答原文，也不影响链路回放能力
+  # ---------------------------------------------------------------------------
+  observability:
+    enabled: true
+    content-level: ${RAG_OBS_CONTENT_LEVEL:METRICS_ONLY}
+    # 防呆闸：即使 content-level 被误配成 FULL_CONTENT，也不会真的上报原文
+    allow-plain-text-content: false
+    max-content-chars: 2000
+    record-retrieved-chunks: false
+    subject-hash-salt: ${RAG_SUBJECT_HASH_SALT:}
+    provider-name: openai
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: never
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    propagation:
+      # 显式锁定 W3C（traceparent + tracestate），禁止退回 b3 / 自定义头
+      type: w3c
+    sampling:
+      probability: ${RAG_OBS_SAMPLING:0.1}
+  otlp:
+    tracing:
+      # 应用只认 OTel Collector（LangFuse 密钥只配在 Collector，业务服务不持有）
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://127.0.0.1:4318/v1/traces}
+      timeout: 3s
+
+logging:
+  level:
+    com.fintech.rag: INFO
+    dev.langchain4j: WARN

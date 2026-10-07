@@ -1,0 +1,67 @@
+# ============================================================================
+# 金融信贷 RAG 知识库平台 —— 忽略规则
+# ============================================================================
+
+# ---------- 构建产物 ----------
+target/
+build/
+out/
+*.class
+*.jar
+*.war
+*.ear
+!.mvn/wrapper/maven-wrapper.jar
+
+# ---------- IDE / 编辑器 ----------
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.settings/
+.classpath
+.project
+.factorypath
+*.swp
+*.swo
+*~
+
+# ---------- 操作系统 ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- 日志与临时文件 ----------
+*.log
+logs/
+*.tmp
+*.bak
+*.orig
+
+# ---------- 敏感信息（红线，绝不入库，见 docs/05 §13 与 docs/01 安全约束） ----------
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+secrets/
+.env
+.env.*
+deploy/observability/.env
+# 模板文件必须保留
+!deploy/observability/env.example
+
+# ---------- 可观测底座本地数据卷 ----------
+deploy/observability/data/
+deploy/observability/clickhouse/
+deploy/observability/postgres/
+deploy/observability/minio/
+
+# ---------- AI 协作本地状态 ----------
+# .workbuddy/ 是 WorkBuddy 的本地工作区（含 memory 与 skills），默认不入库：
+#   1) memory/ 里有排障笔记与内部约定，不适合进公共仓库；
+#   2) 各人本地技能版本不一致，入库会产生无意义冲突。
+# 如需团队共享 skill（推荐做法），改成下面两行即可：
+#   .workbuddy/*
+#   !.workbuddy/skills/
+.workbuddy/

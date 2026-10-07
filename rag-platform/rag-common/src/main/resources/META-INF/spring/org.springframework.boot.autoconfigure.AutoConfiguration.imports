@@ -1,0 +1,3 @@
+com.fintech.rag.common.config.RagCommonJacksonAutoConfiguration
+com.fintech.rag.common.config.RagCommonWebAutoConfiguration
+com.fintech.rag.common.config.RagCommonObservabilityAutoConfiguration

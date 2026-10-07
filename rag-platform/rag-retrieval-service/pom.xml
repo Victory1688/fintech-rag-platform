@@ -67,7 +67,7 @@
         </dependency>
         <!--
           Feign 观测：没有它，本服务发起的 Feign 调用不会携带 traceparent，
-          跨服务链路会在此断开（详见 docs/05 §5.4「跨服务透传」）。
+          跨服务链路会在此断开（详见 docs/05 §5.5「跨服务透传」）。
         -->
         <dependency>
             <groupId>io.github.openfeign</groupId>

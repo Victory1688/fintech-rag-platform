@@ -343,11 +343,11 @@ processors:
         status_code:
           status_codes: [ERROR]
       # 2) 业务异常结果 100% 保留（最有价值的质量样本）
-      - name: abstained-always
+      - name: no-hit-always
         type: string_attribute
         string_attribute:
           key: rag.outcome
-          values: [ABSTAINED, ERROR, GUARDRAIL_BLOCKED]
+          values: [NO_HIT, ERROR, GUARDRAIL_BLOCKED]
       # 3) 护栏命中 100% 保留
       - name: guardrail-always
         type: string_attribute
@@ -805,7 +805,7 @@ add("grafana-dashboard-observability.json", r'''
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(rag_chat_answer_total{outcome=\"ABSTAINED\"}[15m])) / clamp_min(sum(rate(rag_chat_answer_total[15m])), 1)"
+          "expr": "sum(rate(rag_chat_answer_total{outcome=\"NO_HIT\"}[15m])) / clamp_min(sum(rate(rag_chat_answer_total[15m])), 1)"
         }
       ]
     },
@@ -866,7 +866,7 @@ add("grafana-dashboard-observability.json", r'''
       "id": 5,
       "type": "timeseries",
       "title": "回答结果分布（按来源拆分）",
-      "description": "ANSWERED / ABSTAINED / GUARDRAIL_BLOCKED / ERROR 趋势对比；来源即 DMZ_WEB 与 SF_INNER_APP。",
+      "description": "ANSWERED / NO_HIT / GUARDRAIL_BLOCKED / ERROR 趋势对比；来源即 DMZ_WEB 与 SF_INNER_APP。",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "rag-prometheus" },
       "targets": [
@@ -1100,7 +1100,7 @@ export RAG_SUBJECT_HASH_SALT=$(openssl rand -hex 16)
 | 5 | 指标被采集 | Prometheus 查询 `rag_chat_answer_total` | 有数据 |
 | 6 | **LangFuse 宕机** | `docker stop langfuse-web langfuse-worker` 后压测问答 | 业务 RT 无明显变化、成功率不变（关键演练） |
 | 7 | **Collector 宕机** | `docker stop otel-collector` 后压测 | 同上 |
-| 8 | 空召回不调用大模型 | 提问知识库里没有的内容 | `rag_chat_answer_total{outcome="ABSTAINED"}` +1，且模型指标无增长 |
+| 8 | 空召回不调用大模型 | 提问知识库里没有的内容 | `rag_chat_answer_total{outcome="NO_HIT"}` +1，且模型指标无增长 |
 | 9 | 告警能触达 | 手工停一个服务 | P0 告警在 1~2 分钟内到达企业微信 |
 | 10 | actuator 不可外达 | 从外网/办公网访问任一服务 `/actuator/env` | 403 / 不可达 |
 

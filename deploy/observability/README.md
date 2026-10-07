@@ -72,7 +72,7 @@ export RAG_SUBJECT_HASH_SALT=$(openssl rand -hex 16)
 | 5 | 指标被采集 | Prometheus 查询 `rag_chat_answer_total` | 有数据 |
 | 6 | **LangFuse 宕机** | `docker stop langfuse-web langfuse-worker` 后压测问答 | 业务 RT 无明显变化、成功率不变（关键演练） |
 | 7 | **Collector 宕机** | `docker stop otel-collector` 后压测 | 同上 |
-| 8 | 空召回不调用大模型 | 提问知识库里没有的内容 | `rag_chat_answer_total{outcome="ABSTAINED"}` +1，且模型指标无增长 |
+| 8 | 空召回不调用大模型 | 提问知识库里没有的内容 | `rag_chat_answer_total{outcome="NO_HIT"}` +1，且模型指标无增长 |
 | 9 | 告警能触达 | 手工停一个服务 | P0 告警在 1~2 分钟内到达企业微信 |
 | 10 | actuator 不可外达 | 从外网/办公网访问任一服务 `/actuator/env` | 403 / 不可达 |
 

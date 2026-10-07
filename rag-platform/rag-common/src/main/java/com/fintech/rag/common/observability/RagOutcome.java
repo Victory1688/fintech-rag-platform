@@ -14,7 +14,7 @@ public enum RagOutcome {
     ANSWERED,
 
     /** 检索无命中 —— 未调用大模型（「无据不答」） */
-    ABSTAINED,
+    NO_HIT,
 
     /** 被护栏拦截 */
     GUARDRAIL_BLOCKED,

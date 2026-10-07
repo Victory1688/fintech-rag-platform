@@ -73,7 +73,7 @@ public class TracePropagationInterceptor implements RequestInterceptor {
                                 <groupId>io.github.openfeign</groupId>
                                 <artifactId>feign-micrometer</artifactId>
                             </dependency>
-                        并确保 io.micrometer:micrometer-tracing-bridge-otel 在 classpath 上。                        详见 docs/05 §5.4。""");
+                        并确保 io.micrometer:micrometer-tracing-bridge-otel 在 classpath 上。                        详见 docs/05 §5.5。""");
             }
         } catch (Throwable ignored) {
             // 体检本身永不影响启动

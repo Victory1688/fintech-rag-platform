@@ -23,7 +23,7 @@ public class ChatPipelineMetrics {
         this.meterRegistry = meterRegistry;
     }
 
-    /** 记录一次回答的业务结果。空召回率 = ABSTAINED / 总数，是知识库覆盖度的核心指标 */
+    /** 记录一次回答的业务结果。空召回率 = NO_HIT / 总数，是知识库覆盖度的核心指标 */
     public void recordAnswer(RagOutcome outcome, String appSource, String modelCode) {
         meterRegistry.counter(GenAiSemconv.METRIC_CHAT_ANSWER_TOTAL,
                         GenAiSemconv.TAG_OUTCOME, outcome.name(),

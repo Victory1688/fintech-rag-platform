@@ -67,11 +67,11 @@ processors:
         status_code:
           status_codes: [ERROR]
       # 2) 业务异常结果 100% 保留（最有价值的质量样本）
-      - name: abstained-always
+      - name: no-hit-always
         type: string_attribute
         string_attribute:
           key: rag.outcome
-          values: [ABSTAINED, ERROR, GUARDRAIL_BLOCKED]
+          values: [NO_HIT, ERROR, GUARDRAIL_BLOCKED]
       # 3) 护栏命中 100% 保留
       - name: guardrail-always
         type: string_attribute

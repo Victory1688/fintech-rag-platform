@@ -175,7 +175,7 @@ public class RetrievalAppService {
                     ? null : filtered.get(0).score();
             tag(span, GenAiSemconv.ATTR_CHUNK_COUNT, filtered.size());
             tag(span, GenAiSemconv.ATTR_TOP_SCORE, topScore);
-            RagOutcome outcome = emptyHit ? RagOutcome.ABSTAINED : RagOutcome.ANSWERED;
+            RagOutcome outcome = emptyHit ? RagOutcome.NO_HIT : RagOutcome.ANSWERED;
             tag(span, GenAiSemconv.ATTR_OUTCOME, outcome.name());
 
             metrics.record(appSource, cacheHit, outcome,
@@ -200,8 +200,8 @@ public class RetrievalAppService {
     // ------------------------------------------------------------------ 辅助
     private RetrievalResponse abort(Span span, RetrievalRequest request, String appSource,
                                     boolean cacheHit, int rawChunkCount, long start) {
-        tag(span, GenAiSemconv.ATTR_OUTCOME, RagOutcome.ABSTAINED.name());
-        metrics.record(appSource, cacheHit, RagOutcome.ABSTAINED, rawChunkCount, 0, null, 0);
+        tag(span, GenAiSemconv.ATTR_OUTCOME, RagOutcome.NO_HIT.name());
+        metrics.record(appSource, cacheHit, RagOutcome.NO_HIT, rawChunkCount, 0, null, 0);
         return RetrievalResponse.empty(request.query(), request.query(),
                 System.currentTimeMillis() - start);
     }

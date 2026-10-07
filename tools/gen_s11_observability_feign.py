@@ -37,7 +37,7 @@ FEIGN_MICROMETER_MANAGED = """
               io.github.openfeign:feign-micrometer 时，才会装配
               MicrometerObservationCapability 与 PropagatingSenderTracingObservationHandler；
               缺失时 Feign 调用**不带 traceparent**，下游会另起一条新链路
-              （详见 docs/05 §1.2 第 10 条 / §5.4）。
+              （详见 docs/05 §1.2 第 10 条 / §5.5）。
 
               版本由 spring-cloud-dependencies 引入的 feign-bom 统一纳管，故此处不写 version。
               若构建报「缺少 version」，请在 properties 中补
@@ -51,7 +51,7 @@ FEIGN_MICROMETER_MANAGED = """
 FEIGN_MICROMETER_MODULE = """
         <!--
           Feign 观测：没有它，本服务发起的 Feign 调用不会携带 traceparent，
-          跨服务链路会在此断开（详见 docs/05 §5.4「跨服务透传」）。
+          跨服务链路会在此断开（详见 docs/05 §5.5「跨服务透传」）。
         -->
         <dependency>
             <groupId>io.github.openfeign</groupId>
@@ -198,7 +198,7 @@ public class TracePropagationInterceptor implements RequestInterceptor {
                                 <artifactId>feign-micrometer</artifactId>
                             </dependency>
                         并确保 io.micrometer:micrometer-tracing-bridge-otel 在 classpath 上。\
-                        详见 docs/05 §5.4。""");
+                        详见 docs/05 §5.5。""");
             }
         } catch (Throwable ignored) {
             // 体检本身永不影响启动

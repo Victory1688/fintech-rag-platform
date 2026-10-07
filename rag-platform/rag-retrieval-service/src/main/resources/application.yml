@@ -64,7 +64,8 @@ rag:
   observability:
     enabled: true
     content-level: METRICS_ONLY
-    allow-plain-text-content: false
+    # 生产严禁置 true
+    allow-plain-text-content: ${RAG_OBS_ALLOW_PLAIN_TEXT:false}
     subject-hash-salt: ${RAG_SUBJECT_HASH_SALT:}
   retrieval:
     # 检索默认参数走 Nacos 动态下发，便于灰度调参（见 docs/01 §10 R7）

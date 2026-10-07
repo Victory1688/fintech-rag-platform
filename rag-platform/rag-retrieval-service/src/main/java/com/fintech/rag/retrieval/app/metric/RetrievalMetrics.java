@@ -48,7 +48,7 @@ public class RetrievalMetrics {
                         GenAiSemconv.ATTR_CACHE_HIT, hit)
                 .increment();
 
-        if (outcome == RagOutcome.ABSTAINED) {
+        if (outcome == RagOutcome.NO_HIT) {
             meterRegistry.counter(GenAiSemconv.METRIC_RETRIEVAL_EMPTY_TOTAL,
                             GenAiSemconv.TAG_APP_SOURCE, source)
                     .increment();

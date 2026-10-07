@@ -187,7 +187,7 @@
               io.github.openfeign:feign-micrometer 时，才会装配
               MicrometerObservationCapability 与 PropagatingSenderTracingObservationHandler；
               缺失时 Feign 调用**不带 traceparent**，下游会另起一条新链路
-              （详见 docs/05 §1.2 第 10 条 / §5.4）。
+              （详见 docs/05 §1.2 第 10 条 / §5.5）。
 
               版本由 spring-cloud-dependencies 引入的 feign-bom 统一纳管，故此处不写 version。
               若构建报「缺少 version」，请在 properties 中补

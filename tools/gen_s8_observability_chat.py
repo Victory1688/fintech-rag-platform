@@ -465,7 +465,7 @@ public class ChatPipelineMetrics {
         this.meterRegistry = meterRegistry;
     }
 
-    /** 记录一次回答的业务结果。空召回率 = ABSTAINED / 总数，是知识库覆盖度的核心指标 */
+    /** 记录一次回答的业务结果。空召回率 = NO_HIT / 总数，是知识库覆盖度的核心指标 */
     public void recordAnswer(RagOutcome outcome, String appSource, String modelCode) {
         meterRegistry.counter(GenAiSemconv.METRIC_CHAT_ANSWER_TOTAL,
                         GenAiSemconv.TAG_OUTCOME, outcome.name(),
@@ -695,9 +695,9 @@ public class ChatOrchestrationAppService {
             onFinish.accept(noHit, List.of());
             saveAssistantMessage(request, noHit, AnswerType.NO_HIT.name(), null,
                     (int) (System.currentTimeMillis() - start), null);
-            tagOutcome(span, RagOutcome.ABSTAINED, 0);
+            tagOutcome(span, RagOutcome.NO_HIT, 0);
             end(span);
-            metrics.recordAnswer(RagOutcome.ABSTAINED, appSource, null);
+            metrics.recordAnswer(RagOutcome.NO_HIT, appSource, null);
             return;
         }
 
@@ -814,8 +814,8 @@ public class ChatOrchestrationAppService {
         int cost = (int) (System.currentTimeMillis() - start);
         String answer = promptRegistry.noHitAnswer();
         Long messageId = saveAssistantMessage(request, answer, AnswerType.NO_HIT.name(), null, cost, null);
-        tagOutcome(span, RagOutcome.ABSTAINED, 0);
-        metrics.recordAnswer(RagOutcome.ABSTAINED, appSource, null);
+        tagOutcome(span, RagOutcome.NO_HIT, 0);
+        metrics.recordAnswer(RagOutcome.NO_HIT, appSource, null);
         return new ChatResponse(
                 messageId == null ? null : String.valueOf(messageId),
                 request.conversationId(),

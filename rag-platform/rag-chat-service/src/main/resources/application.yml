@@ -81,7 +81,8 @@ rag:
     enabled: true
     content-level: ${RAG_OBS_CONTENT_LEVEL:METRICS_ONLY}
     # 防呆闸：即使 content-level 被误配成 FULL_CONTENT，也不会真的上报原文
-    allow-plain-text-content: false
+    # 如需在开发环境开启原文上报，把本项置为 true（生产严禁）
+    allow-plain-text-content: ${RAG_OBS_ALLOW_PLAIN_TEXT:false}
     max-content-chars: 2000
     record-retrieved-chunks: false
     subject-hash-salt: ${RAG_SUBJECT_HASH_SALT:}

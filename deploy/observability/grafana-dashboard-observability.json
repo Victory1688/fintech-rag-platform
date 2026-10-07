@@ -67,7 +67,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(rag_chat_answer_total{outcome=\"ABSTAINED\"}[15m])) / clamp_min(sum(rate(rag_chat_answer_total[15m])), 1)"
+          "expr": "sum(rate(rag_chat_answer_total{outcome=\"NO_HIT\"}[15m])) / clamp_min(sum(rate(rag_chat_answer_total[15m])), 1)"
         }
       ]
     },
@@ -128,7 +128,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "回答结果分布（按来源拆分）",
-      "description": "ANSWERED / ABSTAINED / GUARDRAIL_BLOCKED / ERROR 趋势对比；来源即 DMZ_WEB 与 SF_INNER_APP。",
+      "description": "ANSWERED / NO_HIT / GUARDRAIL_BLOCKED / ERROR 趋势对比；来源即 DMZ_WEB 与 SF_INNER_APP。",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "rag-prometheus" },
       "targets": [

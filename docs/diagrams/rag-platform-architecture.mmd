@@ -1,0 +1,98 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "16px",
+    "fontFamily": "Microsoft YaHei, PingFang SC, Segoe UI, sans-serif",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#64748b",
+    "clusterBkg": "#F8FAFC",
+    "clusterBorder": "#CBD5E1"
+  },
+  "flowchart": {
+    "htmlLabels": true, "curve": "linear",
+    "nodeSpacing": 40, "rankSpacing": 55,
+    "useMaxWidth": false, "padding": 18
+  }
+} }%%
+flowchart TB
+subgraph EXT["外部 / 办公网"]
+WEB["Web 前端<br/>信贷知识助手"]
+BIZ["内网业务微服务<br/>授信 / 进件 / 贷后"]
+end
+
+subgraph DMZ["DMZ 区（边界）"]
+NGX["Nginx / F5<br/>TLS 卸载"]
+GW["rag-gateway<br/>Spring Cloud Gateway<br/>鉴权 · 限流 · SSE 转发 · 来源标识"]
+end
+
+subgraph SF["SF 内网区（可信域）"]
+CHAT["rag-chat-service :8085<br/>LangChain4j 编排 · Prompt · Agent · SSE"]
+RET["rag-retrieval-service :8084<br/>Query改写 · 混合检索 · Rerank · 业务过滤"]
+KNW["rag-knowledge-service :8082<br/>知识库 · 文档 · ACL · 版本"]
+ING["rag-ingest-service :8083<br/>上传 · 解析流水线 · 状态机"]
+PLT["rag-platform-service :8081<br/>身份 · AppKey · 配额 · 审计"]
+RAGFLOW["RAGFlow :9380<br/>DeepDoc解析 · 分片 · 向量 · 混合检索"]
+LLM["LLM 服务<br/>DeepSeek / 通义 / vLLM 私有化"]
+end
+
+subgraph DATA["数据区"]
+MYSQL[("MySQL 8<br/>元数据 / 会话 / 审计")]
+REDIS[("Redis 7<br/>记忆 · 缓存 · 限流")]
+MINIO[("MinIO<br/>原始文档")]
+MQ[("RocketMQ 5<br/>入库事件 · 审计事件")]
+end
+
+subgraph OBS["可观测区（独立网段）"]
+COLO["OTel Collector<br/>属性脱敏 · 尾部采样 · batch"]
+PROM["Prometheus"]
+AM["Alertmanager"]
+GRAF["Grafana<br/>看板 + 告警规则"]
+LOKI["Loki / ELK"]
+LF["LangFuse v3 自托管<br/>web·worker·PG·ClickHouse·Redis·MinIO"]
+end
+
+IM["值班 IM / 短信"]
+
+WEB --> NGX
+BIZ -. "Feign 直连（不经 DMZ）" .-> CHAT
+NGX --> GW
+
+GW --> CHAT
+GW --> KNW
+GW --> PLT
+BIZ -. "Feign 直连" .-> RET
+
+CHAT --> RET
+CHAT --> PLT
+RET --> RAGFLOW
+RET --> PLT
+KNW --> RAGFLOW
+ING --> RAGFLOW
+ING --> MINIO
+ING --> MQ
+
+CHAT --> LLM
+CHAT --> MYSQL
+CHAT --> REDIS
+KNW --> MYSQL
+ING --> MYSQL
+PLT --> MYSQL
+MQ --> PLT
+
+%% 链路与指标：6 个服务全部推 OTLP 给 Collector（图中只画代表性几条）
+GW --> COLO
+CHAT --> COLO
+RET --> COLO
+ING --> COLO
+COLO --> LF
+
+%% Prometheus 是 pull 模型：直拉各服务 /actuator/prometheus，Collector 不转发指标
+PROM -. "pull /actuator/prometheus" .-> GW
+PROM -. "pull" .-> CHAT
+PROM -. "pull" .-> RET
+PROM --> GRAF
+PROM --> AM
+AM --> IM
+
+CHAT --> LOKI
+RET --> LOKI

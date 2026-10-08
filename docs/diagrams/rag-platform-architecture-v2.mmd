@@ -1,0 +1,135 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "16px",
+    "fontFamily": "Microsoft YaHei, PingFang SC, Segoe UI, sans-serif",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#64748b",
+    "clusterBkg": "#F8FAFC",
+    "clusterBorder": "#CBD5E1"
+  },
+  "flowchart": {
+    "htmlLabels": true, "curve": "linear",
+    "nodeSpacing": 42, "rankSpacing": 58,
+    "useMaxWidth": false, "padding": 18
+  }
+} }%%
+flowchart TB
+
+subgraph EXT["外部 / 办公网"]
+  WEB["Web 前端<br/>信贷知识助手"]
+  BIZ["内网业务微服务<br/>授信 / 进件 / 贷后"]
+end
+
+subgraph DMZ["DMZ 区（边界）"]
+  NGX["Nginx / F5<br/>TLS 卸载"]
+  GW["rag-gateway<br/>Spring Cloud Gateway<br/>鉴权 · 限流 · SSE 转发 · 来源标识"]
+end
+
+subgraph SF["SF 内网区（可信域）"]
+  CHAT["rag-chat-service :8085<br/>LangChain4j 编排 · Prompt · Agent · SSE"]
+  RET["rag-retrieval-service :8084<br/>Query改写 · 混合检索 · Rerank · 业务过滤"]
+  KNW["rag-knowledge-service :8082<br/>知识库 · 文档 · ACL · 版本"]
+  ING["rag-ingest-service :8083<br/>上传 · 解析流水线 · 状态机"]
+  PLT["rag-platform-service :8081<br/>身份 · AppKey · 配额 · 审计"]
+  RAGFLOW["RAGFlow :9380<br/>DeepDoc解析 · 分片 · 向量 · 混合检索"]
+  LLM["LLM 服务<br/>DeepSeek / 通义 / vLLM 私有化"]
+end
+
+subgraph DATA["数据区"]
+  MYSQL[("MySQL 8<br/>元数据 / 会话 / 审计")]
+  REDIS[("Redis 7<br/>记忆 · 缓存 · 限流")]
+  MINIO[("MinIO<br/>原始文档")]
+  MQ[("RocketMQ 5<br/>入库事件 · 审计事件")]
+end
+
+subgraph OBS["可观测区（独立网段）"]
+  COLO["OTel Collector<br/>属性脱敏 · 尾部采样 · batch"]
+  PROM["Prometheus"]
+  AM["Alertmanager"]
+  GRAF["Grafana<br/>看板 + 告警规则"]
+  LOKI["Loki / ELK"]
+  LF["LangFuse v3 自托管<br/>web·worker·PG·ClickHouse·Redis·MinIO"]
+end
+
+IM["值班 IM / 短信"]
+
+%% ---------------- 连线（按语义分组；底部 linkStyle 的索引由脚本自动计算） ----------------
+WEB -->|"HTTPS"| NGX
+NGX --> GW
+BIZ -->|"内网 Feign 直连 · 不经 DMZ"| CHAT
+BIZ -->|"内网 Feign 直连 · 不经 DMZ"| RET
+GW --> CHAT
+GW --> KNW
+GW --> PLT
+CHAT --> RET
+CHAT --> PLT
+RET --> PLT
+MQ --> PLT
+RET --> RAGFLOW
+KNW --> RAGFLOW
+ING --> RAGFLOW
+CHAT --> LLM
+ING --> MINIO
+ING --> MQ
+CHAT --> MYSQL
+CHAT --> REDIS
+KNW --> MYSQL
+ING --> MYSQL
+PLT --> MYSQL
+GW -.-> COLO
+CHAT -.-> COLO
+RET -.-> COLO
+ING -.-> COLO
+COLO -.-> LF
+PROM -. "pull" .-> GW
+PROM -. "pull" .-> CHAT
+PROM -. "pull" .-> RET
+PROM -. "查询" .-> GRAF
+PROM -. "推送告警" .-> AM
+AM -.-> IM
+CHAT -.-> LOKI
+RET -.-> LOKI
+
+%% ---------------- 线型语义（由 linkStyle 控制，图例见页面底部） ----------------
+%% 外部入口路径（HTTPS）
+linkStyle 0,1 stroke:#1D4ED8,stroke-width:3px
+%% 内网 Feign 直连 · 不经 DMZ ★
+linkStyle 2,3 stroke:#DC2626,stroke-width:3.5px
+%% 网关路由
+linkStyle 4,5,6 stroke:#3B82F6,stroke-width:1.8px
+%% 服务间调用
+linkStyle 7,8,9,10 stroke:#64748B,stroke-width:1.5px
+%% 引擎调用（RAGFlow / LLM）
+linkStyle 11,12,13,14 stroke:#EA580C,stroke-width:2px
+%% 数据访问（DB / 缓存 / 对象存储）
+linkStyle 15,16,17,18,19,20,21 stroke:#16A34A,stroke-width:1.5px
+%% OTLP 上报（推给 Collector）
+linkStyle 22,23,24,25,26 stroke:#7C3AED,stroke-width:2px,stroke-dasharray:3 5
+%% Prometheus 拉取（pull 模型）
+linkStyle 27,28,29,30,31 stroke:#0891B2,stroke-width:2.5px,stroke-dasharray:7 6
+%% 告警与日志
+linkStyle 32,33,34 stroke:#94A3B8,stroke-width:1.5px,stroke-dasharray:2 4
+
+%% ---------------- 节点配色（按网络分区） ----------------
+classDef ext  fill:#FFFFFF,stroke:#94A3B8,stroke-width:1.5px,color:#334155
+classDef dmz  fill:#FFF7ED,stroke:#EA580C,stroke-width:1.5px,color:#7C2D12
+classDef svc  fill:#EFF6FF,stroke:#2563EB,stroke-width:1.5px,color:#1E3A8A
+classDef inf  fill:#FEF2F2,stroke:#DC2626,stroke-width:1.5px,color:#7F1D1D
+classDef data fill:#F0FDF4,stroke:#16A34A,stroke-width:1.5px,color:#14532D
+classDef obs  fill:#FAF5FF,stroke:#7C3AED,stroke-width:1.5px,color:#4C1D95
+classDef term fill:#F1F5F9,stroke:#64748B,stroke-width:1.5px,color:#334155
+
+class WEB,BIZ ext
+class NGX,GW dmz
+class CHAT,RET,KNW,ING,PLT svc
+class RAGFLOW,LLM inf
+class MYSQL,REDIS,MINIO,MQ data
+class COLO,PROM,AM,GRAF,LOKI,LF obs
+class IM term
+
+style EXT  fill:#FCFCFD,stroke:#CBD5E1,stroke-width:1px
+style DMZ  fill:#FFFBEB,stroke:#FCD34D,stroke-width:1px
+style SF   fill:#F8FAFC,stroke:#BFDBFE,stroke-width:1px
+style DATA fill:#F8FAFC,stroke:#BBF7D0,stroke-width:1px
+style OBS  fill:#F8FAFC,stroke:#DDD6FE,stroke-width:1px

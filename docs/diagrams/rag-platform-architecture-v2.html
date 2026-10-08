@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>金融信贷 RAG 知识库平台 · 部署架构图（线型语义版）</title>
+<style>
+  :root { --bg:#f6f8fb; --panel:#fff; --border:#e2e8f0; --text:#0f172a;
+          --muted:#64748b; --accent:#2563eb; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:26px 20px 60px; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;
+    -webkit-font-smoothing:antialiased; }
+  header, .toolbar, .legendband, #canvasWrap { max-width:1500px; margin-left:auto; margin-right:auto; }
+  h1 { font-size:21px; margin:0 0 6px; }
+  .sub { color:var(--muted); font-size:13px; line-height:1.75; }
+  .sub code { background:#eef2f7; padding:1px 6px; border-radius:4px; font-size:12px; }
+  .toolbar { margin:16px auto; display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+  button { font:inherit; font-size:13px; padding:8px 15px; border-radius:8px;
+    border:1px solid var(--border); background:#fff; color:var(--text); cursor:pointer;
+    transition:.15s; font-weight:500; }
+  button:hover { border-color:var(--accent); color:var(--accent); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.primary:hover { background:#1d4ed8; color:#fff; }
+  .hint { color:var(--muted); font-size:12px; }
+  .callout { max-width:1500px; margin:0 auto 14px; padding:11px 15px; border-radius:10px;
+    background:#FEF2F2; border:1px solid #FECACA; color:#7F1D1D; font-size:13px; line-height:1.7; }
+  .callout b { color:#DC2626; }
+  #canvasWrap { background:var(--panel); border:1px solid var(--border); border-radius:14px;
+    padding:8px; overflow:auto; box-shadow:0 1px 3px rgba(15,23,42,.05); }
+  #graphHolder svg { max-width:100%; height:auto; display:block; margin:0 auto; }
+  #graphHolder { padding:18px; }
+  #err { display:none; max-width:1500px; margin:16px auto; padding:14px 16px;
+    background:#fef2f2; border:1px solid #fecaca; color:#991b1b; border-radius:10px;
+    font-size:13px; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>金融信贷企业级 RAG 知识库平台 · 部署架构图</h1>
+  <div class="sub">
+    五个网络域：外部/办公网 · DMZ 边界 · SF 可信域 · 数据区 · 可观测区（独立网段）　|　
+    <b>线型按语义着色</b>，图例已画进图里，导出 SVG / PNG 均自带。
+  </div>
+</header>
+
+<div class="callout">
+  <b>读懂这张图的关键：</b>「<b>内网 Feign 直连 · 不经 DMZ</b>」（红色粗实线）与
+  「<b>Prometheus 拉取</b>」（青色点线）是两类完全不同的流量 ——
+  前者是内网业务微服务<b>绕过边界网关</b>直达可信域，是安全设计的核心；
+  后者是监控系统主动<b>拉</b>指标（Prometheus 是 pull 模型，不经 Collector 转发）。
+  线型与颜色均已区分，图例见图片底部。
+</div>
+
+<div class="toolbar">
+  <button class="primary" onclick="dlSVG()">下载 SVG（含图例，矢量）</button>
+  <button onclick="dlPNG()">下载 PNG（含图例，2 倍图）</button>
+  <button onclick="copySrc()">复制 Mermaid 源码</button>
+  <span class="hint" id="hint">提示：SVG 可直接拖进 PPT / Word / Visio，放大不失真。</span>
+</div>
+
+<pre id="err"></pre>
+<div id="canvasWrap"><div id="graphHolder"><pre class="mermaid" id="src">%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "16px",
+    "fontFamily": "Microsoft YaHei, PingFang SC, Segoe UI, sans-serif",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#64748b",
+    "clusterBkg": "#F8FAFC",
+    "clusterBorder": "#CBD5E1"
+  },
+  "flowchart": {
+    "htmlLabels": true, "curve": "linear",
+    "nodeSpacing": 42, "rankSpacing": 58,
+    "useMaxWidth": false, "padding": 18
+  }
+} }%%
+flowchart TB
+
+subgraph EXT["外部 / 办公网"]
+  WEB["Web 前端&lt;br/>信贷知识助手"]
+  BIZ["内网业务微服务&lt;br/>授信 / 进件 / 贷后"]
+end
+
+subgraph DMZ["DMZ 区（边界）"]
+  NGX["Nginx / F5&lt;br/>TLS 卸载"]
+  GW["rag-gateway&lt;br/>Spring Cloud Gateway&lt;br/>鉴权 · 限流 · SSE 转发 · 来源标识"]
+end
+
+subgraph SF["SF 内网区（可信域）"]
+  CHAT["rag-chat-service :8085&lt;br/>LangChain4j 编排 · Prompt · Agent · SSE"]
+  RET["rag-retrieval-service :8084&lt;br/>Query改写 · 混合检索 · Rerank · 业务过滤"]
+  KNW["rag-knowledge-service :8082&lt;br/>知识库 · 文档 · ACL · 版本"]
+  ING["rag-ingest-service :8083&lt;br/>上传 · 解析流水线 · 状态机"]
+  PLT["rag-platform-service :8081&lt;br/>身份 · AppKey · 配额 · 审计"]
+  RAGFLOW["RAGFlow :9380&lt;br/>DeepDoc解析 · 分片 · 向量 · 混合检索"]
+  LLM["LLM 服务&lt;br/>DeepSeek / 通义 / vLLM 私有化"]
+end
+
+subgraph DATA["数据区"]
+  MYSQL[("MySQL 8&lt;br/>元数据 / 会话 / 审计")]
+  REDIS[("Redis 7&lt;br/>记忆 · 缓存 · 限流")]
+  MINIO[("MinIO&lt;br/>原始文档")]
+  MQ[("RocketMQ 5&lt;br/>入库事件 · 审计事件")]
+end
+
+subgraph OBS["可观测区（独立网段）"]
+  COLO["OTel Collector&lt;br/>属性脱敏 · 尾部采样 · batch"]
+  PROM["Prometheus"]
+  AM["Alertmanager"]
+  GRAF["Grafana&lt;br/>看板 + 告警规则"]
+  LOKI["Loki / ELK"]
+  LF["LangFuse v3 自托管&lt;br/>web·worker·PG·ClickHouse·Redis·MinIO"]
+end
+
+IM["值班 IM / 短信"]
+
+%% ---------------- 连线（按语义分组；底部 linkStyle 的索引由脚本自动计算） ----------------
+WEB -->|"HTTPS"| NGX
+NGX --> GW
+BIZ -->|"内网 Feign 直连 · 不经 DMZ"| CHAT
+BIZ -->|"内网 Feign 直连 · 不经 DMZ"| RET
+GW --> CHAT
+GW --> KNW
+GW --> PLT
+CHAT --> RET
+CHAT --> PLT
+RET --> PLT
+MQ --> PLT
+RET --> RAGFLOW
+KNW --> RAGFLOW
+ING --> RAGFLOW
+CHAT --> LLM
+ING --> MINIO
+ING --> MQ
+CHAT --> MYSQL
+CHAT --> REDIS
+KNW --> MYSQL
+ING --> MYSQL
+PLT --> MYSQL
+GW -.-> COLO
+CHAT -.-> COLO
+RET -.-> COLO
+ING -.-> COLO
+COLO -.-> LF
+PROM -. "pull" .-> GW
+PROM -. "pull" .-> CHAT
+PROM -. "pull" .-> RET
+PROM -. "查询" .-> GRAF
+PROM -. "推送告警" .-> AM
+AM -.-> IM
+CHAT -.-> LOKI
+RET -.-> LOKI
+
+%% ---------------- 线型语义（由 linkStyle 控制，图例见页面底部） ----------------
+%% 外部入口路径（HTTPS）
+linkStyle 0,1 stroke:#1D4ED8,stroke-width:3px
+%% 内网 Feign 直连 · 不经 DMZ ★
+linkStyle 2,3 stroke:#DC2626,stroke-width:3.5px
+%% 网关路由
+linkStyle 4,5,6 stroke:#3B82F6,stroke-width:1.8px
+%% 服务间调用
+linkStyle 7,8,9,10 stroke:#64748B,stroke-width:1.5px
+%% 引擎调用（RAGFlow / LLM）
+linkStyle 11,12,13,14 stroke:#EA580C,stroke-width:2px
+%% 数据访问（DB / 缓存 / 对象存储）
+linkStyle 15,16,17,18,19,20,21 stroke:#16A34A,stroke-width:1.5px
+%% OTLP 上报（推给 Collector）
+linkStyle 22,23,24,25,26 stroke:#7C3AED,stroke-width:2px,stroke-dasharray:3 5
+%% Prometheus 拉取（pull 模型）
+linkStyle 27,28,29,30,31 stroke:#0891B2,stroke-width:2.5px,stroke-dasharray:7 6
+%% 告警与日志
+linkStyle 32,33,34 stroke:#94A3B8,stroke-width:1.5px,stroke-dasharray:2 4
+
+%% ---------------- 节点配色（按网络分区） ----------------
+classDef ext  fill:#FFFFFF,stroke:#94A3B8,stroke-width:1.5px,color:#334155
+classDef dmz  fill:#FFF7ED,stroke:#EA580C,stroke-width:1.5px,color:#7C2D12
+classDef svc  fill:#EFF6FF,stroke:#2563EB,stroke-width:1.5px,color:#1E3A8A
+classDef inf  fill:#FEF2F2,stroke:#DC2626,stroke-width:1.5px,color:#7F1D1D
+classDef data fill:#F0FDF4,stroke:#16A34A,stroke-width:1.5px,color:#14532D
+classDef obs  fill:#FAF5FF,stroke:#7C3AED,stroke-width:1.5px,color:#4C1D95
+classDef term fill:#F1F5F9,stroke:#64748B,stroke-width:1.5px,color:#334155
+
+class WEB,BIZ ext
+class NGX,GW dmz
+class CHAT,RET,KNW,ING,PLT svc
+class RAGFLOW,LLM inf
+class MYSQL,REDIS,MINIO,MQ data
+class COLO,PROM,AM,GRAF,LOKI,LF obs
+class IM term
+
+style EXT  fill:#FCFCFD,stroke:#CBD5E1,stroke-width:1px
+style DMZ  fill:#FFFBEB,stroke:#FCD34D,stroke-width:1px
+style SF   fill:#F8FAFC,stroke:#BFDBFE,stroke-width:1px
+style DATA fill:#F8FAFC,stroke:#BBF7D0,stroke-width:1px
+style OBS  fill:#F8FAFC,stroke:#DDD6FE,stroke-width:1px
+</pre></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>
+const SOURCE = document.getElementById('src').textContent;
+const NS = 'http://www.w3.org/2000/svg';
+const LEGEND = [{"label": "外部入口路径（HTTPS）", "stroke": "#1D4ED8", "width": "3", "dash": "", "strong": false}, {"label": "内网 Feign 直连 · 不经 DMZ ★", "stroke": "#DC2626", "width": "3.5", "dash": "", "strong": true}, {"label": "网关路由", "stroke": "#3B82F6", "width": "1.8", "dash": "", "strong": false}, {"label": "服务间调用", "stroke": "#64748B", "width": "1.5", "dash": "", "strong": false}, {"label": "引擎调用（RAGFlow / LLM）", "stroke": "#EA580C", "width": "2", "dash": "", "strong": false}, {"label": "数据访问（DB / 缓存 / 对象存储）", "stroke": "#16A34A", "width": "1.5", "dash": "", "strong": false}, {"label": "OTLP 上报（推给 Collector）", "stroke": "#7C3AED", "width": "2", "dash": "3 5", "strong": false}, {"label": "Prometheus 拉取（pull 模型）", "stroke": "#0891B2", "width": "2.5", "dash": "7 6", "strong": false}, {"label": "告警与日志", "stroke": "#94A3B8", "width": "1.5", "dash": "2 4", "strong": false}];
+
+mermaid.initialize({
+  startOnLoad: false,
+  securityLevel: 'loose',
+  theme: 'base',
+  fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif'
+});
+
+let svgText = '';
+
+/** 把图例注入 SVG 内部：导出 SVG / PNG 时都会带上 */
+function injectLegend(svg) {
+  const vb = (svg.getAttribute('viewBox') || '0 0 1000 500').trim().split(/\s+/).map(Number);
+  const [gx, gy, gw, gh] = vb;
+
+  const cols = 3, rows = Math.ceil(LEGEND.length / cols);
+  const rowH = 34, titleH = 40, padY = 22, padX = 26;
+  const legendH = titleH + rows * rowH + padY;
+  const colW = (gw - padX * 2) / cols;
+  const pad = 26;
+
+  const outer = document.createElementNS(NS, 'svg');
+  const totalW = gw + pad * 2, totalH = gh + legendH + pad * 2;
+  outer.setAttribute('id', svg.id || 'archSvg');
+  outer.setAttribute('width', totalW);
+  outer.setAttribute('height', totalH);
+  outer.setAttribute('viewBox', `0 0 ${totalW} ${totalH}`);
+
+  // 白色底
+  const bg = document.createElementNS(NS, 'rect');
+  bg.setAttribute('x', 0); bg.setAttribute('y', 0);
+  bg.setAttribute('width', totalW); bg.setAttribute('height', totalH);
+  bg.setAttribute('fill', '#ffffff');
+  outer.appendChild(bg);
+
+  // 原图内容（连同其 <style> 一起搬进来，故 outer.id 必须沿用原 id）
+  const gWrap = document.createElementNS(NS, 'g');
+  gWrap.setAttribute('transform', `translate(${pad - gx}, ${pad - gy})`);
+  Array.prototype.slice.call(svg.childNodes).forEach(function (n) {
+    gWrap.appendChild(n.cloneNode(true));
+  });
+  outer.appendChild(gWrap);
+
+  // 图例底板
+  const ly = pad + gh + 14;
+  const box = document.createElementNS(NS, 'rect');
+  box.setAttribute('x', pad); box.setAttribute('y', ly);
+  box.setAttribute('width', gw); box.setAttribute('height', legendH);
+  box.setAttribute('rx', 12);
+  box.setAttribute('fill', '#F8FAFC');
+  box.setAttribute('stroke', '#E2E8F0');
+  outer.appendChild(box);
+
+  const t = document.createElementNS(NS, 'text');
+  t.setAttribute('x', pad + padX); t.setAttribute('y', ly + 27);
+  t.setAttribute('font-size', '16'); t.setAttribute('font-weight', '600');
+  t.setAttribute('fill', '#334155');
+  t.textContent = '图例：线型语义';
+  outer.appendChild(t);
+
+  LEGEND.forEach(function (item, i) {
+    const c = i % cols, r = Math.floor(i / cols);
+    const ix = pad + padX + c * colW;
+    const iy = ly + titleH + r * rowH;
+    const line = document.createElementNS(NS, 'line');
+    line.setAttribute('x1', ix); line.setAttribute('y1', iy);
+    line.setAttribute('x2', ix + 52); line.setAttribute('y2', iy);
+    line.setAttribute('stroke', item.stroke);
+    line.setAttribute('stroke-width', item.width);
+    if (item.dash) line.setAttribute('stroke-dasharray', item.dash);
+    line.setAttribute('stroke-linecap', 'round');
+    outer.appendChild(line);
+    const tx = document.createElementNS(NS, 'text');
+    tx.setAttribute('x', ix + 64); tx.setAttribute('y', iy + 5.5);
+    tx.setAttribute('font-size', '15');
+    tx.setAttribute('fill', item.strong ? '#B91C1C' : '#475569');
+    if (item.strong) tx.setAttribute('font-weight', '600');
+    tx.textContent = item.label;
+    outer.appendChild(tx);
+  });
+
+  return outer;
+}
+
+(async () => {
+  try {
+    const out = await mermaid.render('archSvg', SOURCE);
+    const tmp = document.createElement('div');
+    tmp.innerHTML = out.svg;
+    const g = tmp.querySelector('svg');
+    const merged = injectLegend(g);
+    document.getElementById('graphHolder').innerHTML = '';
+    document.getElementById('graphHolder').appendChild(merged);
+    svgText = new XMLSerializer().serializeToString(merged);
+  } catch (e) {
+    const b = document.getElementById('err');
+    b.style.display = 'block';
+    b.textContent = '渲染失败：' + (e && e.message ? e.message : e);
+  }
+})();
+
+function saveBlob(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+function dlSVG() {
+  if (!svgText) return;
+  const ns = 'xmlns="http://www.w3.org/2000/svg"';
+  saveBlob(new Blob([svgText.includes(ns) ? svgText : svgText.replace('<svg', '<svg ' + ns)],
+    { type: 'image/svg+xml;charset=utf-8' }), 'rag-platform-architecture-v2.svg');
+}
+
+function dlPNG() {
+  const el = document.querySelector('#graphHolder svg');
+  if (!el) return;
+  const vb = (el.getAttribute('viewBox') || '').trim().split(/\s+/).map(Number);
+  const w = vb[2], h = vb[3];
+  const scale = 2;
+  const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.onload = () => {
+    const cv = document.createElement('canvas');
+    cv.width = Math.ceil(w * scale); cv.height = Math.ceil(h * scale);
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.drawImage(img, 0, 0, cv.width, cv.height);
+    URL.revokeObjectURL(url);
+    cv.toBlob(b => saveBlob(b, 'rag-platform-architecture-v2.png'), 'image/png');
+  };
+  img.onerror = () => {
+    const b = document.getElementById('err');
+    b.style.display = 'block';
+    b.textContent = 'PNG 导出失败，请改用「下载 SVG」。';
+  };
+  img.src = url;
+}
+
+function copySrc() {
+  navigator.clipboard.writeText(SOURCE).then(
+    () => { document.getElementById('hint').textContent = '已复制 Mermaid 源码到剪贴板。'; },
+    () => { document.getElementById('hint').textContent = '复制失败，请手动复制。'; });
+}
+</script>
+</body>
+</html>

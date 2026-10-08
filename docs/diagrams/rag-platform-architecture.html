@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>金融信贷 RAG 知识库平台 · 架构图</title>
+<style>
+  :root {
+    --bg:#f6f8fb; --panel:#ffffff; --border:#e2e8f0; --text:#0f172a;
+    --muted:#64748b; --accent:#2563eb;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; padding:28px 20px 60px;
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",
+                "PingFang SC","Hiragino Sans GB",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  header { max-width:1500px; margin:0 auto 16px; }
+  h1 { font-size:21px; margin:0 0 6px; letter-spacing:.2px; }
+  .sub { color:var(--muted); font-size:13px; line-height:1.7; }
+  .sub code { background:#eef2f7; padding:1px 6px; border-radius:4px; font-size:12px; }
+  .toolbar {
+    max-width:1500px; margin:16px auto; display:flex; flex-wrap:wrap; gap:10px;
+    align-items:center;
+  }
+  button {
+    font:inherit; font-size:13px; padding:8px 15px; border-radius:8px;
+    border:1px solid var(--border); background:#fff; color:var(--text);
+    cursor:pointer; transition:.15s; font-weight:500;
+  }
+  button:hover { border-color:var(--accent); color:var(--accent); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.primary:hover { background:#1d4ed8; color:#fff; }
+  .hint { color:var(--muted); font-size:12px; }
+  .legend {
+    max-width:1500px; margin:0 auto 14px; display:flex; flex-wrap:wrap; gap:18px;
+    font-size:12px; color:var(--muted);
+  }
+  .legend span { display:flex; align-items:center; gap:6px; }
+  .swatch { width:22px; height:12px; border-radius:3px; border:1.5px solid; }
+  #canvas {
+    max-width:1500px; margin:0 auto; background:var(--panel);
+    border:1px solid var(--border); border-radius:14px; padding:26px 20px;
+    overflow:auto; box-shadow:0 1px 3px rgba(15,23,42,.05);
+  }
+  #canvas svg { max-width:100%; height:auto; display:block; margin:0 auto; }
+  #err {
+    display:none; max-width:1500px; margin:16px auto; padding:14px 16px;
+    background:#fef2f2; border:1px solid #fecaca; color:#991b1b;
+    border-radius:10px; font-size:13px; white-space:pre-wrap;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>金融信贷企业级 RAG 知识库平台 · 部署架构图</h1>
+  <div class="sub">
+    五个网络域：外部/办公网 · DMZ 边界 · SF 可信域 · 数据区 · 可观测区（独立网段）　|　
+    入口路径 <code>Web → Nginx → rag-gateway</code>；内网业务走 Feign 直连、不经 DMZ。
+  </div>
+</header>
+
+<div class="legend">
+  <span><i class="swatch" style="background:#FFF7ED;border-color:#EA580C"></i>DMZ 边界（不可直达内网引擎）</span>
+  <span><i class="swatch" style="background:#EFF6FF;border-color:#2563EB"></i>业务微服务（6 个，可独立部署）</span>
+  <span><i class="swatch" style="background:#FEF2F2;border-color:#DC2626"></i>检索/模型引擎（仅内网可达）</span>
+  <span><i class="swatch" style="background:#F0FDF4;border-color:#16A34A"></i>数据区（MySQL / Redis / MinIO / MQ）</span>
+  <span><i class="swatch" style="background:#FAF5FF;border-color:#7C3AED"></i>可观测区（独立网段）</span>
+</div>
+
+<div class="toolbar">
+  <button class="primary" onclick="dlSVG()">下载 SVG（矢量，可无限缩放）</button>
+  <button onclick="dlPNG()">下载 PNG（2 倍图，可直接贴 PPT/简历）</button>
+  <button onclick="copySrc()">复制 Mermaid 源码</button>
+  <span class="hint" id="hint">提示：SVG 可直接拖进 PPT / Word / Visio，放大不失真。</span>
+</div>
+
+<pre id="err"></pre>
+<div id="canvas"><pre class="mermaid" id="src">%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "16px",
+    "fontFamily": "Microsoft YaHei, PingFang SC, Segoe UI, sans-serif",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#64748b",
+    "clusterBkg": "#F8FAFC",
+    "clusterBorder": "#CBD5E1"
+  },
+  "flowchart": {
+    "htmlLabels": true, "curve": "linear",
+    "nodeSpacing": 40, "rankSpacing": 55,
+    "useMaxWidth": false, "padding": 18
+  }
+} }%%
+flowchart TB
+subgraph EXT["外部 / 办公网"]
+WEB["Web 前端&lt;br/>信贷知识助手"]
+BIZ["内网业务微服务&lt;br/>授信 / 进件 / 贷后"]
+end
+
+subgraph DMZ["DMZ 区（边界）"]
+NGX["Nginx / F5&lt;br/>TLS 卸载"]
+GW["rag-gateway&lt;br/>Spring Cloud Gateway&lt;br/>鉴权 · 限流 · SSE 转发 · 来源标识"]
+end
+
+subgraph SF["SF 内网区（可信域）"]
+CHAT["rag-chat-service :8085&lt;br/>LangChain4j 编排 · Prompt · Agent · SSE"]
+RET["rag-retrieval-service :8084&lt;br/>Query改写 · 混合检索 · Rerank · 业务过滤"]
+KNW["rag-knowledge-service :8082&lt;br/>知识库 · 文档 · ACL · 版本"]
+ING["rag-ingest-service :8083&lt;br/>上传 · 解析流水线 · 状态机"]
+PLT["rag-platform-service :8081&lt;br/>身份 · AppKey · 配额 · 审计"]
+RAGFLOW["RAGFlow :9380&lt;br/>DeepDoc解析 · 分片 · 向量 · 混合检索"]
+LLM["LLM 服务&lt;br/>DeepSeek / 通义 / vLLM 私有化"]
+end
+
+subgraph DATA["数据区"]
+MYSQL[("MySQL 8&lt;br/>元数据 / 会话 / 审计")]
+REDIS[("Redis 7&lt;br/>记忆 · 缓存 · 限流")]
+MINIO[("MinIO&lt;br/>原始文档")]
+MQ[("RocketMQ 5&lt;br/>入库事件 · 审计事件")]
+end
+
+subgraph OBS["可观测区（独立网段）"]
+COLO["OTel Collector&lt;br/>属性脱敏 · 尾部采样 · batch"]
+PROM["Prometheus"]
+AM["Alertmanager"]
+GRAF["Grafana&lt;br/>看板 + 告警规则"]
+LOKI["Loki / ELK"]
+LF["LangFuse v3 自托管&lt;br/>web·worker·PG·ClickHouse·Redis·MinIO"]
+end
+
+IM["值班 IM / 短信"]
+
+WEB --> NGX
+BIZ -. "Feign 直连（不经 DMZ）" .-> CHAT
+NGX --> GW
+
+GW --> CHAT
+GW --> KNW
+GW --> PLT
+BIZ -. "Feign 直连" .-> RET
+
+CHAT --> RET
+CHAT --> PLT
+RET --> RAGFLOW
+RET --> PLT
+KNW --> RAGFLOW
+ING --> RAGFLOW
+ING --> MINIO
+ING --> MQ
+
+CHAT --> LLM
+CHAT --> MYSQL
+CHAT --> REDIS
+KNW --> MYSQL
+ING --> MYSQL
+PLT --> MYSQL
+MQ --> PLT
+
+%% 链路与指标：6 个服务全部推 OTLP 给 Collector（图中只画代表性几条）
+GW --> COLO
+CHAT --> COLO
+RET --> COLO
+ING --> COLO
+COLO --> LF
+
+%% Prometheus 是 pull 模型：直拉各服务 /actuator/prometheus，Collector 不转发指标
+PROM -. "pull /actuator/prometheus" .-> GW
+PROM -. "pull" .-> CHAT
+PROM -. "pull" .-> RET
+PROM --> GRAF
+PROM --> AM
+AM --> IM
+
+CHAT --> LOKI
+RET --> LOKI
+
+%% ---------- 以下为渲染样式层（不改动结构） ----------
+classDef ext  fill:#FFFFFF,stroke:#94A3B8,stroke-width:1.5px,color:#334155
+classDef dmz  fill:#FFF7ED,stroke:#EA580C,stroke-width:1.5px,color:#7C2D12
+classDef svc  fill:#EFF6FF,stroke:#2563EB,stroke-width:1.5px,color:#1E3A8A
+classDef inf  fill:#FEF2F2,stroke:#DC2626,stroke-width:1.5px,color:#7F1D1D
+classDef data fill:#F0FDF4,stroke:#16A34A,stroke-width:1.5px,color:#14532D
+classDef obs  fill:#FAF5FF,stroke:#7C3AED,stroke-width:1.5px,color:#4C1D95
+classDef term fill:#F1F5F9,stroke:#64748B,stroke-width:1.5px,color:#334155
+
+class WEB,BIZ ext
+class NGX,GW dmz
+class CHAT,RET,KNW,ING,PLT svc
+class RAGFLOW,LLM inf
+class MYSQL,REDIS,MINIO,MQ data
+class COLO,PROM,AM,GRAF,LOKI,LF obs
+class IM term
+
+style EXT  fill:#FCFCFD,stroke:#CBD5E1,stroke-width:1px
+style DMZ  fill:#FFFBEB,stroke:#FCD34D,stroke-width:1px
+style SF   fill:#F8FAFC,stroke:#BFDBFE,stroke-width:1px
+style DATA fill:#F8FAFC,stroke:#BBF7D0,stroke-width:1px
+style OBS  fill:#F8FAFC,stroke:#DDD6FE,stroke-width:1px
+</pre></div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>
+const SOURCE = document.getElementById('src').textContent;
+
+mermaid.initialize({
+  startOnLoad: false,
+  securityLevel: 'loose',
+  theme: 'base',
+  fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif'
+});
+
+let svgText = '';
+
+(async () => {
+  try {
+    const { svg } = await mermaid.render('archSvg', SOURCE);
+    document.getElementById('canvas').innerHTML = svg;
+    svgText = svg;
+    document.title = '金融信贷 RAG 知识库平台 · 架构图';
+  } catch (e) {
+    const box = document.getElementById('err');
+    box.style.display = 'block';
+    box.textContent = '渲染失败：' + (e && e.message ? e.message : e);
+  }
+})();
+
+function saveBlob(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+function dlSVG() {
+  if (!svgText) return;
+  const NS = 'xmlns="http://www.w3.org/2000/svg"';
+  const out = svgText.includes(NS)
+    ? svgText
+    : svgText.replace('<svg', '<svg ' + NS);
+  saveBlob(new Blob([out], { type: 'image/svg+xml;charset=utf-8' }),
+           'rag-platform-architecture.svg');
+}
+
+function dlPNG() {
+  if (!svgText) return;
+  const scale = 2;
+  const m = svgText.match(/viewBox="([\d.\-\s]+)"/);
+  let w, h;
+  if (m) {
+    const p = m[1].trim().split(/\s+/).map(Number);
+    w = p[2]; h = p[3];
+  } else {
+    const el = document.querySelector('#canvas svg');
+    const r = el.getBoundingClientRect();
+    w = r.width; h = r.height;
+  }
+  const img = new Image();
+  const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  img.onload = () => {
+    const cv = document.createElement('canvas');
+    cv.width = Math.ceil(w * scale + 80);
+    cv.height = Math.ceil(h * scale + 80);
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.drawImage(img, 40, 40, w * scale, h * scale);
+    URL.revokeObjectURL(url);
+    cv.toBlob(b => saveBlob(b, 'rag-platform-architecture.png'), 'image/png');
+  };
+  img.onerror = () => {
+    const box = document.getElementById('err');
+    box.style.display = 'block';
+    box.textContent = 'PNG 导出失败，请改用「下载 SVG」（SVG 同样可拖入 PPT）。';
+  };
+  img.src = url;
+}
+
+function copySrc() {
+  navigator.clipboard.writeText(SOURCE).then(
+    () => { document.getElementById('hint').textContent = '已复制 Mermaid 源码到剪贴板。'; },
+    () => { document.getElementById('hint').textContent = '复制失败，请手动从页面源码中复制。'; }
+  );
+}
+</script>
+</body>
+</html>
